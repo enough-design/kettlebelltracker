@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kettlebell Tracker</title>
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --fg:#eef0f4; --mut:#8b93a5; --acc:#ff6a2b; --ok:#3ddc97; --line:#2a2f3a; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; padding:16px; max-width:760px; margin-inline:auto; }
+  h1 { font-size:18px; margin:0 0 12px; font-weight:600; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  button { background:var(--card); color:var(--fg); border:1px solid var(--line); padding:10px 14px; border-radius:10px; font-size:14px; cursor:pointer; }
+  button.primary { background:var(--acc); border-color:var(--acc); color:#111; font-weight:600; }
+  button.on { border-color:var(--ok); color:var(--ok); }
+  button:disabled { opacity:.4; cursor:default; }
+  .status { color:var(--mut); font-size:13px; margin-bottom:12px; }
+  .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; }
+  .card.big { grid-column:span 2; text-align:center; }
+  .lbl { color:var(--mut); font-size:12px; text-transform:uppercase; letter-spacing:.06em; }
+  .val { font-size:34px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .big .val { font-size:88px; line-height:1; color:var(--acc); }
+  .unit { font-size:14px; color:var(--mut); font-weight:400; }
+  canvas { width:100%; height:140px; display:block; }
+  table { width:100%; border-collapse:collapse; font-size:14px; font-variant-numeric:tabular-nums; }
+  th,td { text-align:right; padding:6px 4px; border-bottom:1px solid var(--line); }
+  th:first-child,td:first-child { text-align:left; }
+  th { color:var(--mut); font-weight:500; font-size:12px; }
+  .warn { background:#3a1d1d; border:1px solid #7a2e2e; border-radius:10px; padding:10px; margin-bottom:12px; display:none; font-size:14px; }
+</style>
+</head>
+<body>
+<h1>Kettlebell Tracker</h1>
+<div class="warn" id="warn">Web Bluetooth isn't available in this browser. Use Chrome on Android or macOS (iPhone needs the Bluefy browser).</div>
+
+<div class="row">
+  <button class="primary" id="btnConnect">Connect</button>
+  <button id="btnRaw" disabled>Raw stream: off</button>
+  <button id="btnReset" disabled>Reset</button>
+  <button id="btnCsv">Export reps CSV</button>
+  <button id="btnRawCsv">Export raw CSV</button>
+  <button id="btnSim">Simulate</button>
+</div>
+<div class="status" id="status">Not connected</div>
+
+<div class="grid">
+  <div class="card big"><div class="lbl">Reps this set</div><div class="val" id="repsInSet">0</div></div>
+  <div class="card"><div class="lbl">Set</div><div class="val" id="setNo">1</div></div>
+  <div class="card"><div class="lbl">Total reps</div><div class="val" id="total">0</div></div>
+  <div class="card"><div class="lbl">Last swing</div><div class="val"><span id="last">–</span><span class="unit"> s</span></div></div>
+  <div class="card"><div class="lbl">Avg per swing</div><div class="val"><span id="avg">–</span><span class="unit"> s</span></div></div>
+  <div class="card"><div class="lbl">Peak (last)</div><div class="val"><span id="peak">–</span><span class="unit"> g</span></div></div>
+  <div class="card"><div class="lbl">Since last rep</div><div class="val"><span id="since">–</span><span class="unit"> s</span></div></div>
+</div>
+
+<div class="card" style="margin-bottom:12px">
+  <div class="lbl" style="margin-bottom:6px">Peak acceleration per rep (current set)</div>
+  <canvas id="chart"></canvas>
+</div>
+
+<div class="card">
+  <div class="lbl" style="margin-bottom:6px">Sets</div>
+  <table>
+    <thead><tr><th>Set</th><th>Reps</th><th>Avg swing (s)</th><th>Avg peak (g)</th></tr></thead>
+    <tbody id="sets"></tbody>
+  </table>
+</div>
+
+<script>
+const SVC = '4b420001-7a6c-4f10-9d3e-2b1c5a6e8f01';
+const REP = '4b420002-7a6c-4f10-9d3e-2b1c5a6e8f01';
+const RAW = '4b420003-7a6c-4f10-9d3e-2b1c5a6e8f01';
+const CMD = '4b420004-7a6c-4f10-9d3e-2b1c5a6e8f01';
+
+let device, repC, rawC, cmdC, rawOn = false, simTimer = null;
+let reps = [];   // {t, set, repInSet, total, peak, interval}
+let raw = [];    // {ms, ax, ay, az, gx, gy, gz}
+
+const $ = id => document.getElementById(id);
+const save = () => { try { localStorage.setItem('kb_reps', JSON.stringify(reps)); } catch (e) {} };
+try { reps = JSON.parse(localStorage.getItem('kb_reps') || '[]'); } catch (e) { reps = []; }
+
+if (!navigator.bluetooth) { $('warn').style.display = 'block'; $('btnConnect').disabled = true; }
+
+function setStatus(s) { $('status').textContent = s; }
+
+async function connect() {
+  try {
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [SVC] }, { namePrefix: 'KB' }],
+      optionalServices: [SVC]
+    });
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+    await openGatt();
+  } catch (e) { setStatus('Connect failed: ' + e.message); }
+}
+
+async function openGatt() {
+  setStatus('Connecting…');
+  const server = await device.gatt.connect();
+  const svc = await server.getPrimaryService(SVC);
+  repC = await svc.getCharacteristic(REP);
+  rawC = await svc.getCharacteristic(RAW);
+  cmdC = await svc.getCharacteristic(CMD);
+  repC.addEventListener('characteristicvaluechanged', e => onRep(e.target.value));
+  rawC.addEventListener('characteristicvaluechanged', e => onRaw(e.target.value));
+  await repC.startNotifications();
+  rawOn = false; updateRawBtn();
+  $('btnRaw').disabled = false; $('btnReset').disabled = false;
+  $('btnConnect').textContent = 'Disconnect';
+  setStatus('Connected to ' + device.name);
+}
+
+function onDisconnected() {
+  $('btnRaw').disabled = true; $('btnReset').disabled = true;
+  $('btnConnect').textContent = 'Reconnect';
+  setStatus('Disconnected');
+}
+
+$('btnConnect').onclick = async () => {
+  if (device && device.gatt.connected) { device.gatt.disconnect(); return; }
+  if (device) { try { await openGatt(); return; } catch (e) {} }
+  connect();
+};
+
+function onRep(dv) {
+  const r = {
+    t: Date.now(),
+    set: dv.getUint8(0),
+    repInSet: dv.getUint16(1, true),
+    total: dv.getUint16(3, true),
+    peak: dv.getUint16(5, true) / 1000,
+    interval: dv.getUint16(7, true)
+  };
+  const prev = reps[reps.length - 1];
+  if (prev && prev.total === r.total && prev.set === r.set) return; // duplicate after reconnect
+  pushRep(r);
+}
+
+function pushRep(r) { reps.push(r); save(); render(); }
+
+function onRaw(dv) {
+  raw.push({
+    ms: dv.getUint32(0, true),
+    ax: dv.getInt16(4, true), ay: dv.getInt16(6, true), az: dv.getInt16(8, true),
+    gx: dv.getInt16(10, true) / 10, gy: dv.getInt16(12, true) / 10, gz: dv.getInt16(14, true) / 10
+  });
+}
+
+function updateRawBtn() {
+  $('btnRaw').textContent = 'Raw stream: ' + (rawOn ? 'on' : 'off');
+  $('btnRaw').classList.toggle('on', rawOn);
+}
+
+$('btnRaw').onclick = async () => {
+  try {
+    if (!rawOn) { await rawC.startNotifications(); await cmdC.writeValue(Uint8Array.of(2)); rawOn = true; }
+    else { await cmdC.writeValue(Uint8Array.of(3)); await rawC.stopNotifications(); rawOn = false; }
+    updateRawBtn();
+  } catch (e) { setStatus('Raw toggle failed: ' + e.message); }
+};
+
+$('btnReset').onclick = async () => {
+  if (!confirm('Reset device counts and clear this session?')) return;
+  try { await cmdC.writeValue(Uint8Array.of(1)); } catch (e) {}
+  reps = []; raw = []; save(); render();
+};
+
+function csv(rows, header) {
+  return header.join(',') + '\n' + rows.map(r => header.map(h => r[h]).join(',')).join('\n');
+}
+function download(name, text) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
+  a.download = name; a.click();
+}
+const stamp = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+
+$('btnCsv').onclick = () => {
+  const rows = reps.map(r => ({ time: new Date(r.t).toISOString(), set: r.set, rep_in_set: r.repInSet, total: r.total, peak_g: r.peak.toFixed(3), interval_ms: r.interval }));
+  download(`kb_reps_${stamp()}.csv`, csv(rows, ['time', 'set', 'rep_in_set', 'total', 'peak_g', 'interval_ms']));
+};
+$('btnRawCsv').onclick = () => {
+  if (!raw.length) { setStatus('No raw data yet - turn the raw stream on first'); return; }
+  download(`kb_raw_${stamp()}.csv`, csv(raw, ['ms', 'ax', 'ay', 'az', 'gx', 'gy', 'gz']));
+};
+
+const mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN;
+const fmt = (v, d = 2) => isFinite(v) ? v.toFixed(d) : '–';
+
+function render() {
+  const last = reps[reps.length - 1];
+  if (!last) {
+    ['repsInSet', 'total'].forEach(i => $(i).textContent = 0);
+    $('setNo').textContent = 1; ['last', 'avg', 'peak'].forEach(i => $(i).textContent = '–');
+    $('sets').innerHTML = ''; drawChart([]); return;
+  }
+  const cur = reps.filter(r => r.set === last.set);
+  $('repsInSet').textContent = last.repInSet;
+  $('setNo').textContent = last.set;
+  $('total').textContent = last.total;
+  $('last').textContent = last.interval ? fmt(last.interval / 1000) : '–';
+  $('avg').textContent = fmt(mean(cur.filter(r => r.interval).map(r => r.interval / 1000)));
+  $('peak').textContent = fmt(last.peak);
+  drawChart(cur);
+
+  const bySet = {};
+  reps.forEach(r => (bySet[r.set] = bySet[r.set] || []).push(r));
+  $('sets').innerHTML = Object.keys(bySet).map(s => {
+    const a = bySet[s];
+    return `<tr><td>${s}</td><td>${a.length}</td><td>${fmt(mean(a.filter(r => r.interval).map(r => r.interval / 1000)))}</td><td>${fmt(mean(a.map(r => r.peak)))}</td></tr>`;
+  }).join('');
+}
+
+function drawChart(cur) {
+  const c = $('chart'), dpr = window.devicePixelRatio || 1;
+  c.width = c.clientWidth * dpr; c.height = c.clientHeight * dpr;
+  const g = c.getContext('2d'); g.scale(dpr, dpr);
+  const w = c.clientWidth, h = c.clientHeight;
+  g.clearRect(0, 0, w, h);
+  if (!cur.length) return;
+  const max = Math.max(3, ...cur.map(r => r.peak));
+  const n = Math.max(cur.length, 10), bw = w / n;
+  g.fillStyle = '#ff6a2b';
+  cur.forEach((r, i) => {
+    const bh = (r.peak / max) * (h - 16);
+    g.fillRect(i * bw + 2, h - bh, bw - 4, bh);
+  });
+  g.fillStyle = '#8b93a5'; g.font = '11px system-ui';
+  g.fillText(max.toFixed(1) + ' g', 4, 11);
+}
+
+setInterval(() => {
+  const last = reps[reps.length - 1];
+  $('since').textContent = last ? ((Date.now() - last.t) / 1000).toFixed(0) : '–';
+}, 250);
+
+// Simulator for testing the page without the board
+$('btnSim').onclick = () => {
+  if (simTimer) { clearInterval(simTimer); simTimer = null; $('btnSim').textContent = 'Simulate'; return; }
+  $('btnSim').textContent = 'Stop simulation';
+  let n = 0;
+  simTimer = setInterval(() => {
+    const prev = reps[reps.length - 1];
+    let set = prev ? prev.set : 1, repInSet = prev ? prev.repInSet : 0, total = prev ? prev.total : 0;
+    if (repInSet >= 10) { set++; repInSet = 0; }
+    repInSet++; total++; n++;
+    pushRep({ t: Date.now(), set, repInSet, total, peak: 2.4 + Math.random() * 1.2 - n % 10 * 0.03, interval: repInSet === 1 ? 0 : 1500 + Math.random() * 300 | 0 });
+  }, 1700);
+};
+
+window.addEventListener('resize', render);
+render();
+</script>
+</body>
+</html>
