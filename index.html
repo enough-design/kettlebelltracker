@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kettlebell Tracker</title>
 <style>
-  :root { --bg:#0f1115; --card:#181b22; --fg:#eef0f4; --mut:#8b93a5; --acc:#ff6a2b; --ok:#3ddc97; --rest:#4aa8ff; --line:#2a2f3a; }
+  :root { --bg:#0f1115; --card:#181b22; --fg:#eef0f4; --mut:#8b93a5; --acc:#ff6a2b; --ok:#3ddc97; --rest:#4aa8ff; --line:#2a2f3a; --pow:#f5c542; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; padding:16px; max-width:760px; margin-inline:auto; }
   h1 { font-size:18px; margin:0 0 12px; font-weight:600; }
-  .row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; align-items:center; }
   button { background:var(--card); color:var(--fg); border:1px solid var(--line); padding:10px 14px; border-radius:10px; font-size:14px; cursor:pointer; }
   button.primary { background:var(--acc); border-color:var(--acc); color:#111; font-weight:600; }
   button.on { border-color:var(--ok); color:var(--ok); }
@@ -18,27 +18,39 @@
   #btnStart { background:var(--acc); border-color:var(--acc); color:#111; }
   #btnRest { background:var(--rest); border-color:var(--rest); color:#08121c; }
   #btnStop { background:#2a2f3a; }
-  .status { color:var(--mut); font-size:13px; margin-bottom:12px; }
+  .status { color:var(--mut); font-size:13px; margin-bottom:4px; }
+  .rawinfo { color:var(--mut); font-size:13px; margin-bottom:12px; font-variant-numeric:tabular-nums; }
+  .rawinfo.warn { color:#e0a040; }
+  .weight { display:flex; flex-wrap:wrap; align-items:center; gap:10px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:8px 12px; margin-bottom:12px; }
+  .weight label { color:var(--mut); font-size:13px; text-transform:uppercase; letter-spacing:.06em; }
+  .weight input { width:92px; background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; text-align:right; }
+  .weight input:focus { outline:2px solid var(--pow); border-color:var(--pow); }
+  .weight .u { color:var(--mut); font-size:16px; }
+  .weight .chips { width:100%; display:flex; gap:6px; flex-wrap:wrap; }
+  .weight .chips button { padding:6px 10px; font-size:13px; }
   .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:12px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; }
   .card.big { grid-column:span 2; text-align:center; }
   .lbl { color:var(--mut); font-size:12px; text-transform:uppercase; letter-spacing:.06em; }
   .val { font-size:34px; font-weight:700; font-variant-numeric:tabular-nums; }
   .big .val { font-size:88px; line-height:1; color:var(--acc); }
+  .pow .val { color:var(--pow); }
   .unit { font-size:14px; color:var(--mut); font-weight:400; }
   .phase-work { color:var(--acc); } .phase-rest { color:var(--rest); } .phase-idle { color:var(--mut); }
   canvas { width:100%; height:140px; display:block; }
-  table { width:100%; border-collapse:collapse; font-size:14px; font-variant-numeric:tabular-nums; }
-  th,td { text-align:right; padding:6px 4px; border-bottom:1px solid var(--line); }
+  .tablewrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:13px; font-variant-numeric:tabular-nums; }
+  th,td { text-align:right; padding:6px 4px; border-bottom:1px solid var(--line); white-space:nowrap; }
   th:first-child,td:first-child { text-align:left; }
   th { color:var(--mut); font-weight:500; font-size:12px; }
-  .warn { background:#3a1d1d; border:1px solid #7a2e2e; border-radius:10px; padding:10px; margin-bottom:12px; display:none; font-size:14px; }
+  .warn-box { background:#3a1d1d; border:1px solid #7a2e2e; border-radius:10px; padding:10px; margin-bottom:12px; display:none; font-size:14px; }
   .hint { color:var(--mut); font-size:13px; margin:-4px 0 12px; min-height:18px; }
+  .note { color:var(--mut); font-size:12px; margin:-2px 0 12px; line-height:1.45; }
 </style>
 </head>
 <body>
 <h1>Kettlebell Tracker</h1>
-<div class="warn" id="warn">Web Bluetooth isn't available in this browser. Use Chrome on Android or macOS (iPhone needs the Bluefy browser).</div>
+<div class="warn-box" id="warn">Web Bluetooth isn't available in this browser. Use Chrome on Android or macOS (iPhone needs the Bluefy browser).</div>
 
 <div class="row">
   <button class="primary" id="btnConnect">Connect</button>
@@ -49,6 +61,14 @@
   <button id="btnSim">Simulate</button>
 </div>
 <div class="status" id="status">Not connected</div>
+<div class="rawinfo" id="rawInfo">Raw stream off</div>
+
+<div class="weight">
+  <label for="kg">Kettlebell</label>
+  <input id="kg" type="number" inputmode="decimal" min="1" max="100" step="0.5" placeholder="kg" aria-label="Kettlebell weight in kilograms">
+  <span class="u">kg</span>
+  <div class="chips" id="chips"></div>
+</div>
 
 <div class="row phasebtns">
   <button id="btnStart">Start set</button>
@@ -59,6 +79,10 @@
 
 <div class="grid">
   <div class="card big"><div class="lbl">Reps this set</div><div class="val" id="repsInSet">0</div></div>
+  <div class="card pow"><div class="lbl">Est. power (last rep)</div><div class="val"><span id="pow">–</span><span class="unit"> W</span></div></div>
+  <div class="card pow"><div class="lbl">Est. power (set avg)</div><div class="val"><span id="powAvg">–</span><span class="unit"> W</span></div></div>
+  <div class="card"><div class="lbl">Bell speed (peak)</div><div class="val"><span id="speed">–</span><span class="unit"> m/s</span></div></div>
+  <div class="card"><div class="lbl">Energy per rep</div><div class="val"><span id="energy">–</span><span class="unit"> J</span></div></div>
   <div class="card"><div class="lbl">Phase</div><div class="val"><span id="phase" class="phase-idle">IDLE</span></div><div class="unit" id="phaseTime">0:00</div></div>
   <div class="card"><div class="lbl">Set</div><div class="val" id="setNo">–</div></div>
   <div class="card"><div class="lbl">Total reps</div><div class="val" id="total">0</div></div>
@@ -66,6 +90,7 @@
   <div class="card"><div class="lbl">Avg per swing</div><div class="val"><span id="avg">–</span><span class="unit"> s</span></div></div>
   <div class="card"><div class="lbl">Peak (last)</div><div class="val"><span id="peak">–</span><span class="unit"> g</span></div></div>
 </div>
+<div class="note" id="pnote"></div>
 
 <div class="card" style="margin-bottom:12px">
   <div class="lbl" style="margin-bottom:6px">Peak acceleration per rep (current set)</div>
@@ -74,10 +99,12 @@
 
 <div class="card">
   <div class="lbl" style="margin-bottom:6px">Sets</div>
+  <div class="tablewrap">
   <table>
-    <thead><tr><th>Set</th><th>Reps</th><th>Avg swing (s)</th><th>Avg peak (g)</th><th>Work</th><th>Rest</th></tr></thead>
+    <thead><tr><th>Set</th><th>Reps</th><th>Swing s</th><th>Peak g</th><th>Power W</th><th>Work kJ</th><th>Work/Rest</th></tr></thead>
     <tbody id="sets"></tbody>
   </table>
+  </div>
 </div>
 
 <script>
@@ -85,12 +112,15 @@ const SVC = '4b420001-7a6c-4f10-9d3e-2b1c5a6e8f01';
 const REP = '4b420002-7a6c-4f10-9d3e-2b1c5a6e8f01';
 const RAW = '4b420003-7a6c-4f10-9d3e-2b1c5a6e8f01';
 const CMD = '4b420004-7a6c-4f10-9d3e-2b1c5a6e8f01';
+const G = 9.81;
+const RAW_HDR = 6, RAW_SAMPLE = 13;
 
 let device, repC, rawC, cmdC, rawOn = false, simTimer = null;
-let reps = [];     // {t, phase, set, repInSet, counted, devSet, devTotal, peak, interval}
+let reps = [];     // {t, phase, set, repInSet, counted, devSet, devTotal, peak, interval, gyroPk, sweep, gyroLaunch}
 let raw = [];      // {t, ms, phase, set, ax, ay, az, gx, gy, gz}
 let phases = [];   // {phase, set, t0, t1}
 let curSet = 0, phase = 'idle', phaseStart = Date.now(), outside = 0;
+let rawStats = { packets: 0, lost: 0, lastSeq: null, times: [], perPacket: 0 };
 
 const $ = id => document.getElementById(id);
 const save = () => { try { localStorage.setItem('kb_session2', JSON.stringify({ reps, phases, curSet })); } catch (e) {} };
@@ -102,8 +132,43 @@ try {
   }
 } catch (e) {}
 
-if (!navigator.bluetooth) { $('warn').style.display = 'block'; $('btnConnect').disabled = true; }
+// ---------- Kettlebell weight ----------
+const CHIPS = [8, 12, 16, 20, 24];
+CHIPS.forEach(w => {
+  const b = document.createElement('button');
+  b.textContent = w; b.type = 'button';
+  b.onclick = () => { $('kg').value = w; weightChanged(); };
+  $('chips').appendChild(b);
+});
+try { const w = localStorage.getItem('kb_kg'); if (w) $('kg').value = w; } catch (e) {}
+function kgValue() { const v = parseFloat($('kg').value); return v > 0 && v <= 100 ? v : 0; }
+function weightChanged() { try { localStorage.setItem('kb_kg', $('kg').value); } catch (e) {} render(); }
+$('kg').addEventListener('input', weightChanged);
+
+// ---------- Power model ----------
+// The sensor sits on the bell, so the gyro rate w is the rate the bell swings round its pivot.
+// At the lowest point the bell feels a_peak = g + w^2 r and moves at v = w r, so the swing
+// radius is r = (a_peak - g) / w^2 and needs no tape measure.
+// Angle swept from there to the float gives the height gained: h = r (1 - cos(angle)).
+// Energy per rep = 1/2 m v_launch^2 + m g h ; power = energy / time per rep.
+function calcMetrics(r, kg) {
+  if (!r.gyroPk || !r.sweep || !r.peak) return null;
+  const w = r.gyroPk * Math.PI / 180;
+  if (w < 1.5 || r.peak < 1.3) return null;
+  const rad = (r.peak - 1) * G / (w * w);
+  if (rad < 0.25 || rad > 1.3) return null;        // physically implausible: ignore this rep
+  if (r.sweep < 40 || r.sweep > 135) return null;   // e.g. first swing of a set, or a pick-up
+  const th = r.sweep * Math.PI / 180;
+  const vPk = w * rad;
+  const vL = (r.gyroLaunch * Math.PI / 180) * rad;
+  const h = rad * (1 - Math.cos(th));
+  const E = kg > 0 ? kg * (0.5 * vL * vL + G * h) : null;
+  const P = (E != null && r.interval >= 600) ? E / (r.interval / 1000) : null;
+  return { vPk, rad, th, h, vL, E, P };
+}
+
 function setStatus(s) { $('status').textContent = s; }
+if (!navigator.bluetooth) { $('warn').style.display = 'block'; $('btnConnect').disabled = true; }
 
 // ---------- Bluetooth ----------
 async function connect() {
@@ -149,9 +214,11 @@ $('btnConnect').onclick = async () => {
 
 function connected() { return device && device.gatt && device.gatt.connected && cmdC; }
 
+function resetRawStats() { rawStats = { packets: 0, lost: 0, lastSeq: null, times: [], perPacket: 0 }; }
+
 async function enableRaw() {
   if (!connected() || rawOn) return;
-  try { await rawC.startNotifications(); await cmdC.writeValue(Uint8Array.of(2)); rawOn = true; updateRawBtn(); }
+  try { resetRawStats(); await rawC.startNotifications(); await cmdC.writeValue(Uint8Array.of(2)); rawOn = true; updateRawBtn(); }
   catch (e) { setStatus('Raw start failed: ' + e.message); }
 }
 async function disableRaw() {
@@ -162,14 +229,34 @@ async function disableRaw() {
 function updateRawBtn() {
   $('btnRaw').textContent = 'Raw stream: ' + (rawOn ? 'on' : 'off');
   $('btnRaw').classList.toggle('on', rawOn);
+  updateRawInfo();
 }
 $('btnRaw').onclick = () => rawOn ? disableRaw() : enableRaw();
+
+function rawRate() {
+  const t = rawStats.times;
+  if (t.length < 5) return 0;
+  const span = ((t[t.length - 1] - t[0]) >>> 0) / 1000;
+  return span > 0 ? (t.length - 1) / span : 0;
+}
+function updateRawInfo() {
+  const el = $('rawInfo');
+  if (!rawOn) { el.textContent = raw.length ? `Raw stream off · ${raw.length.toLocaleString()} samples recorded` : 'Raw stream off'; el.className = 'rawinfo'; return; }
+  const hz = rawRate();
+  if (!hz) { el.textContent = 'Raw stream starting…'; el.className = 'rawinfo'; return; }
+  const small = rawStats.perPacket <= 1;
+  el.textContent = `Raw ${hz.toFixed(0)} Hz · ${rawStats.perPacket} sample${rawStats.perPacket === 1 ? '' : 's'}/packet · ${raw.length.toLocaleString()} recorded` +
+    (rawStats.lost ? ` · ${rawStats.lost} packet(s) lost` : '') +
+    (small ? ' · small packet size negotiated, so the stream is thinned to 25 Hz (rep counting is unaffected)' : '');
+  el.className = 'rawinfo' + (small || rawStats.lost ? ' warn' : '');
+}
 
 $('btnReset').onclick = resetAll;
 async function resetAll() {
   if (!confirm('Reset device counts and clear this whole session?')) return;
   try { if (connected()) await cmdC.writeValue(Uint8Array.of(1)); } catch (e) {}
   reps = []; raw = []; phases = []; curSet = 0; phase = 'idle'; outside = 0; phaseStart = Date.now();
+  resetRawStats();
   save(); updateButtons(); render();
 }
 
@@ -196,12 +283,18 @@ function updateButtons() {
 }
 
 // ---------- Incoming data ----------
+// Rep packet: u8 set, u16 repInSet, u16 total, u16 peakMg, u16 intervalMs,
+//             u16 gyroPk (0.1 deg/s), u16 sweep (0.1 deg), u16 gyroLaunch (0.1 deg/s)
 function onRep(dv) {
+  const full = dv.byteLength >= 15;
   addRep({
     devSet: dv.getUint8(0),
     devTotal: dv.getUint16(3, true),
     peak: dv.getUint16(5, true) / 1000,
-    devInterval: dv.getUint16(7, true)
+    devInterval: dv.getUint16(7, true),
+    gyroPk: full ? dv.getUint16(9, true) / 10 : 0,
+    sweep: full ? dv.getUint16(11, true) / 10 : 0,
+    gyroLaunch: full ? dv.getUint16(13, true) / 10 : 0
   });
 }
 
@@ -217,16 +310,31 @@ function addRep(d) {
     const prev = inSet[inSet.length - 1];
     interval = prev ? (d.devInterval || (t - prev.t)) : 0;
   } else { outside++; }
-  reps.push({ t, phase, set: curSet, repInSet, counted, devSet: d.devSet, devTotal: d.devTotal, peak: d.peak, interval });
+  reps.push({ t, phase, set: curSet, repInSet, counted, devSet: d.devSet, devTotal: d.devTotal, peak: d.peak, interval,
+              gyroPk: d.gyroPk || 0, sweep: d.sweep || 0, gyroLaunch: d.gyroLaunch || 0 });
   save(); render();
 }
 
+// Raw packet: u32 t0, u8 seq, u8 count, then count x (u8 dt, i16 ax ay az, i16 gx gy gz)
 function onRaw(dv) {
-  raw.push({
-    t: Date.now(), ms: dv.getUint32(0, true), phase, set: curSet,
-    ax: dv.getInt16(4, true), ay: dv.getInt16(6, true), az: dv.getInt16(8, true),
-    gx: dv.getInt16(10, true) / 10, gy: dv.getInt16(12, true) / 10, gz: dv.getInt16(14, true) / 10
-  });
+  if (dv.byteLength < RAW_HDR + RAW_SAMPLE) return;
+  const arrival = Date.now();
+  const t0 = dv.getUint32(0, true), seq = dv.getUint8(4), n = dv.getUint8(5);
+  const cnt = Math.min(n, Math.floor((dv.byteLength - RAW_HDR) / RAW_SAMPLE));
+  if (rawStats.lastSeq != null) rawStats.lost += (seq - rawStats.lastSeq - 1 + 256) % 256;
+  rawStats.lastSeq = seq; rawStats.packets++; rawStats.perPacket = cnt;
+  const lastMs = t0 + dv.getUint8(RAW_HDR + (cnt - 1) * RAW_SAMPLE);
+  for (let i = 0; i < cnt; i++) {
+    const o = RAW_HDR + i * RAW_SAMPLE;
+    const ms = t0 + dv.getUint8(o);
+    raw.push({
+      t: arrival - (lastMs - ms), ms: ms >>> 0, phase, set: curSet,
+      ax: dv.getInt16(o + 1, true), ay: dv.getInt16(o + 3, true), az: dv.getInt16(o + 5, true),
+      gx: dv.getInt16(o + 7, true) / 10, gy: dv.getInt16(o + 9, true) / 10, gz: dv.getInt16(o + 11, true) / 10
+    });
+    rawStats.times.push(ms >>> 0);
+  }
+  if (rawStats.times.length > 200) rawStats.times.splice(0, rawStats.times.length - 200);
 }
 
 // ---------- Export ----------
@@ -239,14 +347,23 @@ function download(name, text) {
   a.download = name; a.click();
 }
 const stamp = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+const f = (v, d) => (v == null || !isFinite(v)) ? '' : v.toFixed(d);
 
 $('btnCsv').onclick = () => {
-  const rows = reps.map(r => ({
-    time: new Date(r.t).toISOString(), phase: r.phase, set: r.set, rep_in_set: r.repInSet,
-    counted: r.counted ? 1 : 0, device_set: r.devSet, device_total: r.devTotal,
-    peak_g: r.peak.toFixed(3), interval_ms: r.interval
-  }));
-  download(`kb_reps_${stamp()}.csv`, csv(rows, ['time', 'phase', 'set', 'rep_in_set', 'counted', 'device_set', 'device_total', 'peak_g', 'interval_ms']));
+  const kg = kgValue();
+  const rows = reps.map(r => {
+    const m = calcMetrics(r, kg);
+    return {
+      time: new Date(r.t).toISOString(), phase: r.phase, set: r.set, rep_in_set: r.repInSet,
+      counted: r.counted ? 1 : 0, device_set: r.devSet, device_total: r.devTotal,
+      peak_g: r.peak.toFixed(3), interval_ms: r.interval,
+      gyro_peak_dps: r.gyroPk, sweep_deg: r.sweep, gyro_launch_dps: r.gyroLaunch,
+      bell_kg: kg || '', radius_m: f(m && m.rad, 2), speed_ms: f(m && m.vPk, 2),
+      energy_j: f(m && m.E, 1), power_w: f(m && m.P, 1)
+    };
+  });
+  download(`kb_reps_${stamp()}.csv`, csv(rows, ['time', 'phase', 'set', 'rep_in_set', 'counted', 'device_set', 'device_total', 'peak_g', 'interval_ms',
+    'gyro_peak_dps', 'sweep_deg', 'gyro_launch_dps', 'bell_kg', 'radius_m', 'speed_ms', 'energy_j', 'power_w']));
 };
 $('btnRawCsv').onclick = () => {
   if (!raw.length) { setStatus('No raw data yet - press Start set while connected'); return; }
@@ -260,9 +377,12 @@ const fmt = (v, d = 2) => isFinite(v) ? v.toFixed(d) : '–';
 const mmss = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
 
 function render() {
+  const kg = kgValue();
   const counted = reps.filter(r => r.counted);
   const cur = counted.filter(r => r.set === curSet);
   const last = cur[cur.length - 1];
+  const mets = cur.map(r => calcMetrics(r, kg));
+  const lastM = mets[mets.length - 1];
 
   $('repsInSet').textContent = cur.length;
   $('setNo').textContent = curSet || '–';
@@ -270,6 +390,11 @@ function render() {
   $('last').textContent = last && last.interval ? fmt(last.interval / 1000) : '–';
   $('avg').textContent = fmt(mean(cur.filter(r => r.interval).map(r => r.interval / 1000)));
   $('peak').textContent = last ? fmt(last.peak) : '–';
+
+  $('pow').textContent = lastM && lastM.P != null ? fmt(lastM.P, 0) : '–';
+  $('powAvg').textContent = fmt(mean(mets.filter(m => m && m.P != null).map(m => m.P)), 0);
+  $('speed').textContent = lastM ? fmt(lastM.vPk, 1) : '–';
+  $('energy').textContent = lastM && lastM.E != null ? fmt(lastM.E, 0) : '–';
 
   const label = phase === 'idle' ? 'IDLE' : phase.toUpperCase();
   $('phase').textContent = label;
@@ -279,14 +404,21 @@ function render() {
   else if (phase === 'idle') $('hint').textContent = 'Press Start set, swing, then Rest or Stop.';
   else $('hint').textContent = '';
 
+  $('pnote').textContent = kg
+    ? 'Power is an estimate: bell speed and swing angle from the sensor give the energy lifted each rep (½mv² + mgh), divided by the time per rep. Good for comparing reps and sessions, not lab-grade watts. The first swing of a set has no power reading.'
+    : 'Enter the kettlebell weight above to see power and energy.';
+
   drawChart(cur);
 
   const now = Date.now();
   const setNums = [...new Set(phases.map(p => p.set))];
   $('sets').innerHTML = setNums.map(s => {
     const a = counted.filter(r => r.set === s);
+    const ms = a.map(r => calcMetrics(r, kg)).filter(m => m && m.E != null);
+    const work = ms.length ? mean(ms.map(m => m.E)) * a.length / 1000 : NaN;
+    const pw = mean(ms.filter(m => m.P != null).map(m => m.P));
     const dur = type => phases.filter(p => p.phase === type && p.set === s).reduce((x, p) => x + ((p.t1 ?? now) - p.t0), 0);
-    return `<tr><td>${s}</td><td>${a.length}</td><td>${fmt(mean(a.filter(r => r.interval).map(r => r.interval / 1000)))}</td><td>${fmt(mean(a.map(r => r.peak)))}</td><td>${mmss(dur('work'))}</td><td>${mmss(dur('rest'))}</td></tr>`;
+    return `<tr><td>${s}</td><td>${a.length}</td><td>${fmt(mean(a.filter(r => r.interval).map(r => r.interval / 1000)))}</td><td>${fmt(mean(a.map(r => r.peak)))}</td><td>${fmt(pw, 0)}</td><td>${fmt(work, 2)}</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td></tr>`;
   }).join('');
 }
 
@@ -311,6 +443,7 @@ function drawChart(cur) {
 setInterval(() => {
   $('phaseTime').textContent = phase === 'idle' ? '–' : mmss(Date.now() - phaseStart);
   if (phase === 'rest') render(); // keeps the rest column ticking
+  updateRawInfo();
 }, 500);
 
 // ---------- Simulator ----------
@@ -318,9 +451,11 @@ $('btnSim').onclick = () => {
   if (simTimer) { clearInterval(simTimer); simTimer = null; $('btnSim').textContent = 'Simulate'; return; }
   $('btnSim').textContent = 'Stop simulation';
   let n = reps.length ? reps[reps.length - 1].devTotal : 0, k = 0;
+  const j = s => (Math.random() - 0.5) * 2 * s;
   simTimer = setInterval(() => {
     n++; k++;
-    addRep({ devSet: 1, devTotal: n, peak: 2.4 + Math.random() * 1.2 - (k % 10) * 0.03, devInterval: 1500 + (Math.random() * 300 | 0) });
+    addRep({ devSet: 1, devTotal: n, peak: 2.5 + j(0.25), devInterval: 1500 + (j(40) | 0),
+             gyroPk: 295 + j(20), sweep: 80 + j(6), gyroLaunch: 210 + j(25) });
   }, 1700);
 };
 
