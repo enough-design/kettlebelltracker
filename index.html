@@ -28,6 +28,13 @@
   .weight .u { color:var(--mut); font-size:16px; }
   .weight .chips { width:100%; display:flex; gap:6px; flex-wrap:wrap; }
   .weight .chips button { padding:6px 10px; font-size:13px; }
+  .adv { flex-basis:100%; }
+  .adv summary { color:var(--mut); font-size:12px; cursor:pointer; list-style:none; padding:2px 0; }
+  .adv summary::-webkit-details-marker { display:none; }
+  .adv summary::before { content:'+ '; }
+  .adv[open] summary::before { content:'– '; }
+  .advbody { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:8px; }
+  .radhint { color:var(--mut); font-size:12px; flex-basis:100%; line-height:1.4; }
   .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:12px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; }
   .card.big { grid-column:span 2; text-align:center; }
@@ -68,6 +75,15 @@
   <input id="kg" type="number" inputmode="decimal" min="1" max="100" step="0.5" placeholder="kg" aria-label="Kettlebell weight in kilograms">
   <span class="u">kg</span>
   <div class="chips" id="chips"></div>
+  <details class="adv">
+    <summary>Advanced</summary>
+    <div class="advbody">
+      <label for="rad">Swing radius</label>
+      <input id="rad" type="number" inputmode="decimal" min="0.3" max="1.2" step="0.01" placeholder="0.60" aria-label="Swing radius in metres" style="width:92px">
+      <span class="u">m</span>
+      <span class="radhint" id="radHint"></span>
+    </div>
+  </details>
 </div>
 
 <div class="row phasebtns">
@@ -141,18 +157,22 @@ CHIPS.forEach(w => {
   $('chips').appendChild(b);
 });
 try { const w = localStorage.getItem('kb_kg'); if (w) $('kg').value = w; } catch (e) {}
+try { const rr = localStorage.getItem('kb_radius'); if (rr) $('rad').value = rr; } catch (e) {}
+function radiusSetting() { const v = parseFloat($('rad').value); return v >= 0.3 && v <= 1.2 ? v : DEFAULT_RADIUS; }
+$('rad').addEventListener('input', () => { try { localStorage.setItem('kb_radius', $('rad').value); } catch (e) {} render(); });
 function kgValue() { const v = parseFloat($('kg').value); return v > 0 && v <= 100 ? v : 0; }
 function weightChanged() { try { localStorage.setItem('kb_kg', $('kg').value); } catch (e) {} render(); }
 $('kg').addEventListener('input', weightChanged);
 
+const DEFAULT_RADIUS = 0.60;   // metres
 // ---------- Power model ----------
 // The sensor sits on the bell, so the gyro rate w is the rate the bell swings round its pivot.
-// At the lowest point the bell feels a_peak = g + w^2 r, so each rep gives a swing radius
-// r = (a_peak - g) / w^2. One rep's radius is noisy (it divides two peaks and squares one),
-// so the model uses the MEDIAN radius over the session instead - the real radius barely changes.
-// Bell speed = w * r. The angle swept from the lowest point to the float gives the height
-// gained: h = r (1 - cos(angle)). Energy per rep = 1/2 m v_launch^2 + m g h; power = energy / time per rep.
-const DEFAULT_RADIUS = 0.60;   // metres, used until 5 valid reps have been seen
+// Bell speed = w * r, where r is the swing radius (pivot to bell). The angle swept from the
+// lowest point to the float gives the height gained: h = r (1 - cos(angle)).
+// Energy per rep = 1/2 m v_launch^2 + m g h ; power = energy / time per rep.
+// The radius is a SETTING (default 0.60 m, which fits the 12 kg test data). The sensor can also
+// suggest a radius, r = (a_peak - g) / w^2, but that reading is biased upwards on heavier bells
+// (the hip drive adds to the peak acceleration), so it is shown only as a diagnostic.
 function repRadius(r) {
   if (!r.gyroPk || !r.sweep || !r.peak) return null;
   const w = r.gyroPk * Math.PI / 180;
@@ -165,7 +185,7 @@ function repRadius(r) {
 function sessionRadius() {
   const rs = [];
   for (const r of reps) { if (!r.counted) continue; const x = repRadius(r); if (x != null) rs.push(x); }
-  if (rs.length < 5) return DEFAULT_RADIUS;
+  if (rs.length < 5) return NaN;
   rs.sort((a, b) => a - b);
   const mid = rs.length >> 1;
   return rs.length % 2 ? rs[mid] : (rs[mid - 1] + rs[mid]) / 2;
@@ -173,7 +193,7 @@ function sessionRadius() {
 function calcMetrics(r, kg, r0) {
   const own = repRadius(r);
   if (own == null) return null;
-  const rad = r0 || DEFAULT_RADIUS;
+  const rad = r0 || radiusSetting();
   const w = r.gyroPk * Math.PI / 180;
   const th = r.sweep * Math.PI / 180;
   const vPk = w * rad;
@@ -367,7 +387,7 @@ const stamp = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
 const f = (v, d) => (v == null || !isFinite(v)) ? '' : v.toFixed(d);
 
 $('btnCsv').onclick = () => {
-  const kg = kgValue(), r0 = sessionRadius();
+  const kg = kgValue(), r0 = radiusSetting();
   const rows = reps.map(r => {
     const m = calcMetrics(r, kg, r0);
     return {
@@ -394,7 +414,7 @@ const fmt = (v, d = 2) => isFinite(v) ? v.toFixed(d) : '–';
 const mmss = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
 
 function render() {
-  const kg = kgValue(), r0 = sessionRadius();
+  const kg = kgValue(), r0 = radiusSetting(), rMeas = sessionRadius();
   const counted = reps.filter(r => r.counted);
   const cur = counted.filter(r => r.set === curSet);
   const last = cur[cur.length - 1];
@@ -422,8 +442,11 @@ function render() {
   else $('hint').textContent = '';
 
   $('pnote').textContent = kg
-    ? 'Power is an estimate: bell speed and swing angle from the sensor give the energy lifted each rep (½mv² + mgh), divided by the time per rep. Swing radius is the session median (' + r0.toFixed(2) + ' m). Good for comparing reps and sessions, not lab-grade watts. The first swing of a set has no power reading.'
+    ? 'Power is an estimate: bell speed and swing angle from the sensor give the energy lifted each rep (½mv² + mgh), divided by the time per rep. Assumes a typical swing radius of ' + r0.toFixed(2) + ' m (see Advanced). Good for comparing reps and sessions, not lab-grade watts. The first swing of a set has no power reading.'
     : 'Enter the kettlebell weight above to see power and energy.';
+
+  $('radHint').textContent = 'Pivot-to-bell distance used in the power estimate. The default 0.60 m suits typical swings with 12 kg and 20 kg bells; change it only if you want to calibrate to a measured value.' +
+    (isFinite(rMeas) ? ' The sensor alone suggests ' + rMeas.toFixed(2) + ' m this session, but that estimate reads high on heavier bells, so it is not used.' : '');
 
   drawChart(cur);
 
