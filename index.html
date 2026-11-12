@@ -41,6 +41,7 @@
   .capture select { font-size:17px; font-weight:600; }
   .capture textarea { resize:vertical; min-height:56px; }
   .capture .sub { color:var(--mut); font-size:12px; line-height:1.4; }
+  td input.note { width:170px; background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:4px 6px; font-size:14px; text-align:left; }
   td input.mine { width:52px; background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:4px 6px; font-size:14px; text-align:right; }
   .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:12px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; }
@@ -143,7 +144,7 @@
   <div class="lbl" style="margin-bottom:6px">Sets</div>
   <div class="tablewrap">
   <table>
-    <thead><tr><th>Set</th><th>Move</th><th>Reps</th><th>Swing s</th><th>Peak g</th><th>Power W</th><th>Work kJ</th><th>Work/Rest</th><th>Your count</th></tr></thead>
+    <thead><tr><th>Set</th><th>Move</th><th>Reps</th><th>Swing s</th><th>Peak g</th><th>Power W</th><th>Work kJ</th><th>Work/Rest</th><th>Your count</th><th>Set notes</th></tr></thead>
     <tbody id="sets"></tbody>
   </table>
   </div>
@@ -429,6 +430,7 @@ function csv(rows, header) {
   return header.join(',') + '\n' + rows.map(r => header.map(h => esc(r[h])).join(',')).join('\n');
 }
 const fname = kind => { const n = slug($('sname').value); return `kb_${kind}_${n ? n + '_' : ''}${stamp()}.csv`; };
+const setDesc = s => (setMeta[s] && setMeta[s].desc) || '';
 const capCols = () => ({ session_name: $('sname').value.trim(), description: $('sdesc').value.trim() });
 function download(name, text) {
   const a = document.createElement('a');
@@ -450,16 +452,16 @@ $('btnCsv').onclick = () => {
       gyro_peak_dps: r.gyroPk, sweep_deg: r.sweep, gyro_launch_dps: r.gyroLaunch,
       bell_kg: kg || '', radius_measured_m: f(m && m.own, 2), radius_used_m: f(m && m.rad, 2), speed_ms: f(m && m.vPk, 2),
       energy_j: f(m && m.E, 1), power_w: f(m && m.P, 1),
-      movement: r.set ? moveOf(r.set) : '', your_count: (setMeta[r.set] && setMeta[r.set].trueReps != null) ? setMeta[r.set].trueReps : '', ...capCols()
+      movement: r.set ? moveOf(r.set) : '', your_count: (setMeta[r.set] && setMeta[r.set].trueReps != null) ? setMeta[r.set].trueReps : '', set_description: setDesc(r.set), ...capCols()
     };
   });
   download(fname('reps'), csv(rows, ['time', 'phase', 'set', 'rep_in_set', 'counted', 'full_swing', 'device_set', 'device_total', 'peak_g', 'interval_ms',
-    'gyro_peak_dps', 'sweep_deg', 'gyro_launch_dps', 'bell_kg', 'radius_measured_m', 'radius_used_m', 'speed_ms', 'energy_j', 'power_w', 'movement', 'your_count', 'session_name', 'description']));
+    'gyro_peak_dps', 'sweep_deg', 'gyro_launch_dps', 'bell_kg', 'radius_measured_m', 'radius_used_m', 'speed_ms', 'energy_j', 'power_w', 'movement', 'your_count', 'set_description', 'session_name', 'description']));
 };
 $('btnRawCsv').onclick = () => {
   if (!raw.length) { setStatus('No raw data yet - press Start set while connected'); return; }
-  const rows = raw.map(r => ({ ...r, t_epoch_ms: r.t, your_count: (setMeta[r.set] && setMeta[r.set].trueReps != null) ? setMeta[r.set].trueReps : '', ...capCols() }));
-  download(fname('raw'), csv(rows, ['t_epoch_ms', 'ms', 'phase', 'set', 'ax', 'ay', 'az', 'gx', 'gy', 'gz', 'movement', 'bell_kg', 'your_count', 'session_name', 'description']));
+  const rows = raw.map(r => ({ ...r, t_epoch_ms: r.t, your_count: (setMeta[r.set] && setMeta[r.set].trueReps != null) ? setMeta[r.set].trueReps : '', set_description: setDesc(r.set), ...capCols() }));
+  download(fname('raw'), csv(rows, ['t_epoch_ms', 'ms', 'phase', 'set', 'ax', 'ay', 'az', 'gx', 'gy', 'gz', 'movement', 'bell_kg', 'your_count', 'set_description', 'session_name', 'description']));
 };
 
 // ---------- Display ----------
@@ -524,16 +526,19 @@ function render() {
     const pw = mean(ms.filter(m => m.P != null).map(m => m.P));
     const dur = type => phases.filter(p => p.phase === type && p.set === s).reduce((x, p) => x + ((p.t1 ?? now) - p.t0), 0);
     const sh = a.filter(isShort).length;
-    const mine = `<td><input class="mine" type="number" inputmode="numeric" min="0" max="999" data-set="${s}" value="${setMeta[s] && setMeta[s].trueReps != null ? setMeta[s].trueReps : ''}" aria-label="Reps you actually did in set ${s}"></td>`;
+    const mine = `<td><input class="mine" type="number" inputmode="numeric" min="0" max="999" data-set="${s}" value="${setMeta[s] && setMeta[s].trueReps != null ? setMeta[s].trueReps : ''}" aria-label="Reps you actually did in set ${s}"></td><td><input class="note" type="text" maxlength="120" placeholder="e.g. last 3 half reps" data-set="${s}" value="${(setMeta[s] && setMeta[s].desc || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}" aria-label="Notes for set ${s}"></td>`;
     if (isPressSet(s)) return `<tr><td>${s}</td><td>${MOVE_LABEL.press} ${kgForSet(s) || ''}${kgForSet(s) ? ' kg' : ''}</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td>${mine}</tr>`;
     return `<tr><td>${s}</td><td>${MOVE_LABEL[moveOf(s)]} ${kgForSet(s) || ''}${kgForSet(s) ? ' kg' : ''}</td><td>${a.length}${sh ? ` <span style="color:#ffb020">(${sh} short)</span>` : ''}</td><td>${fmt(mean(a.filter(r => r.interval).map(r => r.interval / 1000)))}</td><td>${fmt(mean(a.map(r => r.peak)))}</td><td>${fmt(pw, 0)}</td><td>${fmt(work, 2)}</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td>${mine}</tr>`;
   }).join('');
 }
 
 $('sets').addEventListener('input', e => {
-  const el = e.target; if (!el.classList.contains('mine')) return;
+  const el = e.target; const isCount = el.classList.contains('mine'), isNote = el.classList.contains('note');
+  if (!isCount && !isNote) return;
   const n = +el.dataset.set; if (!setMeta[n]) setMeta[n] = { movement: 'swing', kg: null, trueReps: null };
-  const v = parseInt(el.value, 10); setMeta[n].trueReps = isFinite(v) ? v : null; save();
+  if (isCount) { const v = parseInt(el.value, 10); setMeta[n].trueReps = isFinite(v) ? v : null; }
+  else setMeta[n].desc = el.value;
+  save();
 });
 
 function drawChart(cur) {

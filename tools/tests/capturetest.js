@@ -12,7 +12,7 @@ const { chromium } = require('playwright'); const fs = require('fs');
   await page.fill('#kg', '20'); await page.click('#btnStart'); await feedRaw(); await feedRep(reps.slice(0, 10)); await page.click('#btnRest');
   await page.selectOption('#move', 'press'); await page.fill('#kg', '12'); await page.click('#btnStart'); await feedRaw(); await feedRep(reps.slice(10, 14));
   const midDisabled = await page.$eval('#move', e => e.disabled);
-  await page.click('#btnStop'); await page.fill('input.mine[data-set="2"]', '8'); await page.fill('input.mine[data-set="1"]', '10');
+  await page.click('#btnStop'); await page.fill('input.mine[data-set="2"]', '8'); await page.fill('input.mine[data-set="1"]', '10'); await page.fill('input.note[data-set="2"]', 'reps 6, 7 half "slow"');
   await page.evaluate(() => render());   // focus-safe table redraw
   const rows = await page.$$eval('#sets tr', trs => trs.map(tr => [...tr.children].map(td => td.querySelector('input') ? 'in=' + td.querySelector('input').value : td.textContent)));
   const total = await page.$eval('#total', e => e.textContent);
