@@ -94,7 +94,7 @@
 <div class="hint" id="hint"></div>
 
 <div class="grid">
-  <div class="card big"><div class="lbl">Reps this set</div><div class="val" id="repsInSet">0</div></div>
+  <div class="card big"><div class="lbl">Reps this set</div><div class="val" id="repsInSet">0</div><div class="unit" id="repsShort" style="color:#ffb020"></div></div>
   <div class="card pow"><div class="lbl">Est. power (last rep)</div><div class="val"><span id="pow">–</span><span class="unit"> W</span></div></div>
   <div class="card pow"><div class="lbl">Est. power (set avg)</div><div class="val"><span id="powAvg">–</span><span class="unit"> W</span></div></div>
   <div class="card"><div class="lbl">Bell speed (peak)</div><div class="val"><span id="speed">–</span><span class="unit"> m/s</span></div></div>
@@ -173,6 +173,11 @@ const DEFAULT_RADIUS = 0.60;   // metres
 // The radius is a SETTING (default 0.60 m, which fits the 12 kg test data). The sensor can also
 // suggest a radius, r = (a_peak - g) / w^2, but that reading is biased upwards on heavier bells
 // (the hip drive adds to the peak acceleration), so it is shown only as a diagnostic.
+// A "short" swing never reached the float point: launch gyro well below any full swing in the test
+// data (short 72-122 dps, full 164-345 dps, 12 kg and 20 kg). Short swings are still counted but get
+// no power/energy figure. Reps with no launch reading (gyroLaunch 0) are treated as full.
+const SHORT_DPS = 150;
+const isShort = r => r.gyroLaunch > 0 && r.gyroLaunch < SHORT_DPS;
 function repRadius(r) {
   if (!r.gyroPk || !r.sweep || !r.peak) return null;
   const w = r.gyroPk * Math.PI / 180;
@@ -191,6 +196,7 @@ function sessionRadius() {
   return rs.length % 2 ? rs[mid] : (rs[mid - 1] + rs[mid]) / 2;
 }
 function calcMetrics(r, kg, r0) {
+  if (isShort(r)) return null;
   const own = repRadius(r);
   if (own == null) return null;
   const rad = r0 || radiusSetting();
@@ -392,14 +398,14 @@ $('btnCsv').onclick = () => {
     const m = calcMetrics(r, kg, r0);
     return {
       time: new Date(r.t).toISOString(), phase: r.phase, set: r.set, rep_in_set: r.repInSet,
-      counted: r.counted ? 1 : 0, device_set: r.devSet, device_total: r.devTotal,
+      counted: r.counted ? 1 : 0, full_swing: r.gyroLaunch > 0 ? (isShort(r) ? 0 : 1) : '', device_set: r.devSet, device_total: r.devTotal,
       peak_g: r.peak.toFixed(3), interval_ms: r.interval,
       gyro_peak_dps: r.gyroPk, sweep_deg: r.sweep, gyro_launch_dps: r.gyroLaunch,
       bell_kg: kg || '', radius_measured_m: f(m && m.own, 2), radius_used_m: f(m && m.rad, 2), speed_ms: f(m && m.vPk, 2),
       energy_j: f(m && m.E, 1), power_w: f(m && m.P, 1)
     };
   });
-  download(`kb_reps_${stamp()}.csv`, csv(rows, ['time', 'phase', 'set', 'rep_in_set', 'counted', 'device_set', 'device_total', 'peak_g', 'interval_ms',
+  download(`kb_reps_${stamp()}.csv`, csv(rows, ['time', 'phase', 'set', 'rep_in_set', 'counted', 'full_swing', 'device_set', 'device_total', 'peak_g', 'interval_ms',
     'gyro_peak_dps', 'sweep_deg', 'gyro_launch_dps', 'bell_kg', 'radius_measured_m', 'radius_used_m', 'speed_ms', 'energy_j', 'power_w']));
 };
 $('btnRawCsv').onclick = () => {
@@ -421,7 +427,9 @@ function render() {
   const mets = cur.map(r => calcMetrics(r, kg, r0));
   const lastM = mets[mets.length - 1];
 
+  const nShort = cur.filter(isShort).length;
   $('repsInSet').textContent = cur.length;
+  $('repsShort').textContent = nShort ? nShort + ' short (not full swings)' : '';
   $('setNo').textContent = curSet || '–';
   $('total').textContent = counted.length;
   $('last').textContent = last && last.interval ? fmt(last.interval / 1000) : '–';
@@ -442,7 +450,7 @@ function render() {
   else $('hint').textContent = '';
 
   $('pnote').textContent = kg
-    ? 'Power is an estimate: bell speed and swing angle from the sensor give the energy lifted each rep (½mv² + mgh), divided by the time per rep. Assumes a typical swing radius of ' + r0.toFixed(2) + ' m (see Advanced). Good for comparing reps and sessions, not lab-grade watts. The first swing of a set has no power reading.'
+    ? 'Power is an estimate: bell speed and swing angle from the sensor give the energy lifted each rep (½mv² + mgh), divided by the time per rep. Assumes a typical swing radius of ' + r0.toFixed(2) + ' m (see Advanced). Good for comparing reps and sessions, not lab-grade watts. The first swing of a set has no power reading. Short swings (bell not reaching the float point) are counted but excluded from power and energy.'
     : 'Enter the kettlebell weight above to see power and energy.';
 
   $('radHint').textContent = 'Pivot-to-bell distance used in the power estimate. The default 0.60 m suits typical swings with 12 kg and 20 kg bells; change it only if you want to calibrate to a measured value.' +
@@ -458,7 +466,8 @@ function render() {
     const work = ms.length ? mean(ms.map(m => m.E)) * a.length / 1000 : NaN;
     const pw = mean(ms.filter(m => m.P != null).map(m => m.P));
     const dur = type => phases.filter(p => p.phase === type && p.set === s).reduce((x, p) => x + ((p.t1 ?? now) - p.t0), 0);
-    return `<tr><td>${s}</td><td>${a.length}</td><td>${fmt(mean(a.filter(r => r.interval).map(r => r.interval / 1000)))}</td><td>${fmt(mean(a.map(r => r.peak)))}</td><td>${fmt(pw, 0)}</td><td>${fmt(work, 2)}</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td></tr>`;
+    const sh = a.filter(isShort).length;
+    return `<tr><td>${s}</td><td>${a.length}${sh ? ` <span style="color:#ffb020">(${sh} short)</span>` : ''}</td><td>${fmt(mean(a.filter(r => r.interval).map(r => r.interval / 1000)))}</td><td>${fmt(mean(a.map(r => r.peak)))}</td><td>${fmt(pw, 0)}</td><td>${fmt(work, 2)}</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td></tr>`;
   }).join('');
 }
 
@@ -471,8 +480,8 @@ function drawChart(cur) {
   if (!cur.length) return;
   const max = Math.max(3, ...cur.map(r => r.peak));
   const n = Math.max(cur.length, 10), bw = w / n;
-  g.fillStyle = '#ff6a2b';
   cur.forEach((r, i) => {
+    g.fillStyle = isShort(r) ? '#6b7385' : '#ff6a2b';
     const bh = (r.peak / max) * (h - 16);
     g.fillRect(i * bw + 2, h - bh, bw - 4, bh);
   });
