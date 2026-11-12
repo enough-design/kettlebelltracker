@@ -9,6 +9,7 @@ CAPS = {
  'B': ('kb_raw_12kg-ohp-rh_2026-11-12-21-55-53.csv', {1: (8, 'F'*8), 2: (None, None), 3: (8, 'FFFFFHHH')}),
  'C': ('kb_raw_12kg-ohp-rh_2026-11-12-22-20-49.csv', {1: (8, 'F'*8), 2: (8, 'F'*8), 3: (8, 'F'*8)}),
  'D': ('kb_raw_12kg-ohp-rh_2026-11-12-22-34-47.csv', {1: (8, 'FHFHFHFH'), 2: (8, 'FFFFHHHH')}),
+ 'E': ('kb_raw_12kg-ohp-rh_2026-11-12-22-57-53.csv', {1: (8, None), 2: (8, None), 3: (8, None), 4: (0, None)}),  # 4 = 8 cleans, no presses
 }
 def load(cap):
     d = pd.read_csv(RAW + CAPS[cap][0])
