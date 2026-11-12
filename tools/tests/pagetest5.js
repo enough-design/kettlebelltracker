@@ -5,7 +5,7 @@ async function run(page, hexfile, sizes, kg) {
   const reps = JSON.parse(fs.readFileSync(`${S}/${hexfile}`, 'utf8')); let o = 0;
   const feed = a => page.evaluate(h => h.forEach(x => { const u = new Uint8Array(x.match(/../g).map(c => parseInt(c, 16))); onRep(new DataView(u.buffer)); }), a);
   for (let s = 0; s < sizes.length; s++) { await page.click('#btnStart'); await feed(reps.slice(o, o + sizes[s])); o += sizes[s]; if (s < sizes.length - 1) await page.click('#btnRest'); }
-  return page.evaluate(() => ({ rows: [...document.querySelectorAll('#sets tr')].map(tr => [...tr.children].map(td => td.textContent).slice(0, 6)),
+  return page.evaluate(() => ({ rows: [...document.querySelectorAll('#sets tr')].map(tr => [...tr.children].map(td => td.textContent).slice(0, 7)),
     hint: document.getElementById('radHint').textContent, note: document.getElementById('pnote').textContent.slice(-150),
     energy: document.getElementById('energy').textContent, powAvg: document.getElementById('powAvg').textContent }));
 }

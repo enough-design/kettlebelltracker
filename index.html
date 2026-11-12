@@ -35,6 +35,13 @@
   .adv[open] summary::before { content:'– '; }
   .advbody { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:8px; }
   .radhint { color:var(--mut); font-size:12px; flex-basis:100%; line-height:1.4; }
+  .capture { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px; margin-bottom:12px; display:flex; flex-direction:column; gap:8px; }
+  .capture label { color:var(--mut); font-size:12px; text-transform:uppercase; letter-spacing:.06em; }
+  .capture input[type=text], .capture textarea, .capture select { width:100%; box-sizing:border-box; background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:15px; font-family:inherit; }
+  .capture select { font-size:17px; font-weight:600; }
+  .capture textarea { resize:vertical; min-height:56px; }
+  .capture .sub { color:var(--mut); font-size:12px; line-height:1.4; }
+  td input.mine { width:52px; background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:4px 6px; font-size:14px; text-align:right; }
   .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:12px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; }
   .card.big { grid-column:span 2; text-align:center; }
@@ -86,6 +93,25 @@
   </details>
 </div>
 
+<div class="capture">
+  <div>
+    <label for="move">Movement (applies to the next set)</label>
+    <select id="move">
+      <option value="swing">Kettlebell swings</option>
+      <option value="press">Overhead press</option>
+    </select>
+    <div class="sub" id="moveHint"></div>
+  </div>
+  <div>
+    <label for="sname">Capture name (used in the file names)</label>
+    <input id="sname" type="text" maxlength="60" placeholder="e.g. 16kg-press-test1" autocomplete="off">
+  </div>
+  <div>
+    <label for="sdesc">Description (saved in the CSV)</label>
+    <textarea id="sdesc" maxlength="300" placeholder="What was done: bell position, tempo, hand, anything unusual"></textarea>
+  </div>
+</div>
+
 <div class="row phasebtns">
   <button id="btnStart">Start set</button>
   <button id="btnRest" disabled>Rest</button>
@@ -117,7 +143,7 @@
   <div class="lbl" style="margin-bottom:6px">Sets</div>
   <div class="tablewrap">
   <table>
-    <thead><tr><th>Set</th><th>Reps</th><th>Swing s</th><th>Peak g</th><th>Power W</th><th>Work kJ</th><th>Work/Rest</th></tr></thead>
+    <thead><tr><th>Set</th><th>Move</th><th>Reps</th><th>Swing s</th><th>Peak g</th><th>Power W</th><th>Work kJ</th><th>Work/Rest</th><th>Your count</th></tr></thead>
     <tbody id="sets"></tbody>
   </table>
   </div>
@@ -135,15 +161,16 @@ let device, repC, rawC, cmdC, rawOn = false, simTimer = null;
 let reps = [];     // {t, phase, set, repInSet, counted, devSet, devTotal, peak, interval, gyroPk, sweep, gyroLaunch}
 let raw = [];      // {t, ms, phase, set, ax, ay, az, gx, gy, gz}
 let phases = [];   // {phase, set, t0, t1}
+let setMeta = {};  // set -> {movement, kg, trueReps}
 let curSet = 0, phase = 'idle', phaseStart = Date.now(), outside = 0;
 let rawStats = { packets: 0, lost: 0, lastSeq: null, times: [], perPacket: 0 };
 
 const $ = id => document.getElementById(id);
-const save = () => { try { localStorage.setItem('kb_session2', JSON.stringify({ reps, phases, curSet })); } catch (e) {} };
+const save = () => { try { localStorage.setItem('kb_session2', JSON.stringify({ reps, phases, curSet, setMeta })); } catch (e) {} };
 try {
   const s = JSON.parse(localStorage.getItem('kb_session2') || 'null');
   if (s) {
-    reps = s.reps || []; phases = s.phases || []; curSet = s.curSet || 0;
+    reps = s.reps || []; phases = s.phases || []; curSet = s.curSet || 0; setMeta = s.setMeta || {};
     phases.forEach(p => { if (p.t1 == null) p.t1 = p.t0; });
   }
 } catch (e) {}
@@ -161,7 +188,21 @@ try { const rr = localStorage.getItem('kb_radius'); if (rr) $('rad').value = rr;
 function radiusSetting() { const v = parseFloat($('rad').value); return v >= 0.3 && v <= 1.2 ? v : DEFAULT_RADIUS; }
 $('rad').addEventListener('input', () => { try { localStorage.setItem('kb_radius', $('rad').value); } catch (e) {} render(); });
 function kgValue() { const v = parseFloat($('kg').value); return v > 0 && v <= 100 ? v : 0; }
-function weightChanged() { try { localStorage.setItem('kb_kg', $('kg').value); } catch (e) {} render(); }
+function weightChanged() {
+  try { localStorage.setItem('kb_kg', $('kg').value); } catch (e) {}
+  // the weight is stored per set: changing it mid-set corrects that set; between sets it applies to the NEXT set
+  if (phase === 'work' && curSet > 0 && setMeta[curSet]) { setMeta[curSet].kg = kgValue() || null; save(); }
+  render();
+}
+const kgForSet = s => { const m = setMeta[s]; return m && m.kg != null ? m.kg : kgValue(); };
+const moveOf = s => (setMeta[s] && setMeta[s].movement) || 'swing';
+const MOVE_LABEL = { swing: 'Swing', press: 'Press' };
+const curMove = () => (phase !== 'idle' && setMeta[curSet]) ? moveOf(curSet) : $('move').value;
+['kb_move', 'kb_name', 'kb_desc'].forEach(k => { try { const v = localStorage.getItem(k); if (v != null) $({ kb_move: 'move', kb_name: 'sname', kb_desc: 'sdesc' }[k]).value = v; } catch (e) {} });
+if (!['swing', 'press'].includes($('move').value)) $('move').value = 'swing';
+[['move', 'kb_move'], ['sname', 'kb_name'], ['sdesc', 'kb_desc']].forEach(([id, key]) =>
+  $(id).addEventListener(id === 'move' ? 'change' : 'input', () => { try { localStorage.setItem(key, $(id).value); } catch (e) {} render(); }));
+const slug = t => t.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50);
 $('kg').addEventListener('input', weightChanged);
 
 const DEFAULT_RADIUS = 0.60;   // metres
@@ -298,7 +339,7 @@ $('btnReset').onclick = resetAll;
 async function resetAll() {
   if (!confirm('Reset device counts and clear this whole session?')) return;
   try { if (connected()) await cmdC.writeValue(Uint8Array.of(1)); } catch (e) {}
-  reps = []; raw = []; phases = []; curSet = 0; phase = 'idle'; outside = 0; phaseStart = Date.now();
+  reps = []; raw = []; phases = []; setMeta = {}; curSet = 0; phase = 'idle'; outside = 0; phaseStart = Date.now();
   resetRawStats();
   save(); updateButtons(); render();
 }
@@ -308,7 +349,7 @@ function setPhase(p) {
   const now = Date.now();
   const open = phases[phases.length - 1];
   if (open && open.t1 == null) open.t1 = now;
-  if (p === 'work') curSet++;
+  if (p === 'work') { curSet++; setMeta[curSet] = { movement: $('move').value, kg: kgValue() || null, trueReps: null }; }
   phase = p; phaseStart = now;
   if (p !== 'idle') phases.push({ phase: p, set: curSet, t0: now, t1: null });
   save(); updateButtons(); render();
@@ -345,14 +386,15 @@ function addRep(d) {
   const prevAny = reps[reps.length - 1];
   if (prevAny && prevAny.devTotal === d.devTotal && prevAny.devSet === d.devSet) return; // duplicate after reconnect
   const t = Date.now();
-  const counted = phase === 'work';
+  const isPress = phase === 'work' && moveOf(curSet) === 'press';
+  const counted = phase === 'work' && !isPress;   // press sets: swing counter ignored, reps kept for reference
   let repInSet = 0, interval = 0;
   if (counted) {
     const inSet = reps.filter(r => r.counted && r.set === curSet);
     repInSet = inSet.length + 1;
     const prev = inSet[inSet.length - 1];
     interval = prev ? (d.devInterval || (t - prev.t)) : 0;
-  } else { outside++; }
+  } else if (!isPress) { outside++; }
   reps.push({ t, phase, set: curSet, repInSet, counted, devSet: d.devSet, devTotal: d.devTotal, peak: d.peak, interval,
               gyroPk: d.gyroPk || 0, sweep: d.sweep || 0, gyroLaunch: d.gyroLaunch || 0 });
   save(); render();
@@ -372,6 +414,7 @@ function onRaw(dv) {
     const ms = t0 + dv.getUint8(o);
     raw.push({
       t: arrival - (lastMs - ms), ms: ms >>> 0, phase, set: curSet,
+      movement: setMeta[curSet] ? moveOf(curSet) : '', bell_kg: setMeta[curSet] && setMeta[curSet].kg != null ? setMeta[curSet].kg : '',
       ax: dv.getInt16(o + 1, true), ay: dv.getInt16(o + 3, true), az: dv.getInt16(o + 5, true),
       gx: dv.getInt16(o + 7, true) / 10, gy: dv.getInt16(o + 9, true) / 10, gz: dv.getInt16(o + 11, true) / 10
     });
@@ -381,9 +424,12 @@ function onRaw(dv) {
 }
 
 // ---------- Export ----------
+const esc = v => { v = String(v ?? ''); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""').replace(/[\r\n]+/g, ' ') + '"' : v; };
 function csv(rows, header) {
-  return header.join(',') + '\n' + rows.map(r => header.map(h => r[h]).join(',')).join('\n');
+  return header.join(',') + '\n' + rows.map(r => header.map(h => esc(r[h])).join(',')).join('\n');
 }
+const fname = kind => { const n = slug($('sname').value); return `kb_${kind}_${n ? n + '_' : ''}${stamp()}.csv`; };
+const capCols = () => ({ session_name: $('sname').value.trim(), description: $('sdesc').value.trim() });
 function download(name, text) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
@@ -393,25 +439,27 @@ const stamp = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
 const f = (v, d) => (v == null || !isFinite(v)) ? '' : v.toFixed(d);
 
 $('btnCsv').onclick = () => {
-  const kg = kgValue(), r0 = radiusSetting();
+  const r0 = radiusSetting();
   const rows = reps.map(r => {
-    const m = calcMetrics(r, kg, r0);
+    const kg = kgForSet(r.set);
+    const m = moveOf(r.set) === 'swing' ? calcMetrics(r, kg, r0) : null;
     return {
       time: new Date(r.t).toISOString(), phase: r.phase, set: r.set, rep_in_set: r.repInSet,
       counted: r.counted ? 1 : 0, full_swing: r.gyroLaunch > 0 ? (isShort(r) ? 0 : 1) : '', device_set: r.devSet, device_total: r.devTotal,
       peak_g: r.peak.toFixed(3), interval_ms: r.interval,
       gyro_peak_dps: r.gyroPk, sweep_deg: r.sweep, gyro_launch_dps: r.gyroLaunch,
       bell_kg: kg || '', radius_measured_m: f(m && m.own, 2), radius_used_m: f(m && m.rad, 2), speed_ms: f(m && m.vPk, 2),
-      energy_j: f(m && m.E, 1), power_w: f(m && m.P, 1)
+      energy_j: f(m && m.E, 1), power_w: f(m && m.P, 1),
+      movement: r.set ? moveOf(r.set) : '', your_count: (setMeta[r.set] && setMeta[r.set].trueReps != null) ? setMeta[r.set].trueReps : '', ...capCols()
     };
   });
-  download(`kb_reps_${stamp()}.csv`, csv(rows, ['time', 'phase', 'set', 'rep_in_set', 'counted', 'full_swing', 'device_set', 'device_total', 'peak_g', 'interval_ms',
-    'gyro_peak_dps', 'sweep_deg', 'gyro_launch_dps', 'bell_kg', 'radius_measured_m', 'radius_used_m', 'speed_ms', 'energy_j', 'power_w']));
+  download(fname('reps'), csv(rows, ['time', 'phase', 'set', 'rep_in_set', 'counted', 'full_swing', 'device_set', 'device_total', 'peak_g', 'interval_ms',
+    'gyro_peak_dps', 'sweep_deg', 'gyro_launch_dps', 'bell_kg', 'radius_measured_m', 'radius_used_m', 'speed_ms', 'energy_j', 'power_w', 'movement', 'your_count', 'session_name', 'description']));
 };
 $('btnRawCsv').onclick = () => {
   if (!raw.length) { setStatus('No raw data yet - press Start set while connected'); return; }
-  const rows = raw.map(r => ({ ...r, t_epoch_ms: r.t }));
-  download(`kb_raw_${stamp()}.csv`, csv(rows, ['t_epoch_ms', 'ms', 'phase', 'set', 'ax', 'ay', 'az', 'gx', 'gy', 'gz']));
+  const rows = raw.map(r => ({ ...r, t_epoch_ms: r.t, your_count: (setMeta[r.set] && setMeta[r.set].trueReps != null) ? setMeta[r.set].trueReps : '', ...capCols() }));
+  download(fname('raw'), csv(rows, ['t_epoch_ms', 'ms', 'phase', 'set', 'ax', 'ay', 'az', 'gx', 'gy', 'gz', 'movement', 'bell_kg', 'your_count', 'session_name', 'description']));
 };
 
 // ---------- Display ----------
@@ -421,14 +469,19 @@ const mmss = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return Math.f
 
 function render() {
   const kg = kgValue(), r0 = radiusSetting(), rMeas = sessionRadius();
+  const press = curMove() === 'press';
   const counted = reps.filter(r => r.counted);
   const cur = counted.filter(r => r.set === curSet);
   const last = cur[cur.length - 1];
-  const mets = cur.map(r => calcMetrics(r, kg, r0));
+  const mets = cur.map(r => calcMetrics(r, kgForSet(curSet), r0));
   const lastM = mets[mets.length - 1];
 
   const nShort = cur.filter(isShort).length;
-  $('repsInSet').textContent = cur.length;
+  $('repsInSet').textContent = press ? '–' : cur.length;
+  $('move').disabled = phase === 'work';
+  $('moveHint').textContent = press
+    ? 'Press: recording only. The swing counter is ignored; type how many reps you actually did in the Sets table.'
+    : 'Swings: reps counted live and flagged if short.';
   $('repsShort').textContent = nShort ? nShort + ' short (not full swings)' : '';
   $('setNo').textContent = curSet || '–';
   $('total').textContent = counted.length;
@@ -446,10 +499,12 @@ function render() {
   $('phase').className = 'phase-' + phase;
 
   if (phase === 'idle' && outside > 0) $('hint').textContent = outside + ' rep(s) arrived outside a set and were not counted - press Start set first.';
-  else if (phase === 'idle') $('hint').textContent = 'Press Start set, swing, then Rest or Stop.';
+  else if (phase === 'idle') $('hint').textContent = 'Press Start set, ' + (press ? 'press' : 'swing') + ', then Rest or Stop.';
   else $('hint').textContent = '';
 
-  $('pnote').textContent = kg
+  $('pnote').textContent = press
+    ? 'Overhead press capture: the raw stream is recorded for training. Enter your own rep count for each set in the Sets table (saved as your_count in the CSVs). No live rep count or power for presses yet.'
+    : kg
     ? 'Power is an estimate: bell speed and swing angle from the sensor give the energy lifted each rep (½mv² + mgh), divided by the time per rep. Assumes a typical swing radius of ' + r0.toFixed(2) + ' m (see Advanced). Good for comparing reps and sessions, not lab-grade watts. The first swing of a set has no power reading. Short swings (bell not reaching the float point) are counted but excluded from power and energy.'
     : 'Enter the kettlebell weight above to see power and energy.';
 
@@ -460,16 +515,26 @@ function render() {
 
   const now = Date.now();
   const setNums = [...new Set(phases.map(p => p.set))];
-  $('sets').innerHTML = setNums.map(s => {
+  const isPressSet = s => moveOf(s) === 'press';
+  const tbl = $('sets');
+  if (!(document.activeElement && tbl.contains(document.activeElement))) tbl.innerHTML = setNums.map(s => {
     const a = counted.filter(r => r.set === s);
-    const ms = a.map(r => calcMetrics(r, kg, r0)).filter(m => m && m.E != null);
+    const ms = a.map(r => calcMetrics(r, kgForSet(s), r0)).filter(m => m && m.E != null);
     const work = ms.length ? mean(ms.map(m => m.E)) * a.length / 1000 : NaN;
     const pw = mean(ms.filter(m => m.P != null).map(m => m.P));
     const dur = type => phases.filter(p => p.phase === type && p.set === s).reduce((x, p) => x + ((p.t1 ?? now) - p.t0), 0);
     const sh = a.filter(isShort).length;
-    return `<tr><td>${s}</td><td>${a.length}${sh ? ` <span style="color:#ffb020">(${sh} short)</span>` : ''}</td><td>${fmt(mean(a.filter(r => r.interval).map(r => r.interval / 1000)))}</td><td>${fmt(mean(a.map(r => r.peak)))}</td><td>${fmt(pw, 0)}</td><td>${fmt(work, 2)}</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td></tr>`;
+    const mine = `<td><input class="mine" type="number" inputmode="numeric" min="0" max="999" data-set="${s}" value="${setMeta[s] && setMeta[s].trueReps != null ? setMeta[s].trueReps : ''}" aria-label="Reps you actually did in set ${s}"></td>`;
+    if (isPressSet(s)) return `<tr><td>${s}</td><td>${MOVE_LABEL.press} ${kgForSet(s) || ''}${kgForSet(s) ? ' kg' : ''}</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td>${mine}</tr>`;
+    return `<tr><td>${s}</td><td>${MOVE_LABEL[moveOf(s)]} ${kgForSet(s) || ''}${kgForSet(s) ? ' kg' : ''}</td><td>${a.length}${sh ? ` <span style="color:#ffb020">(${sh} short)</span>` : ''}</td><td>${fmt(mean(a.filter(r => r.interval).map(r => r.interval / 1000)))}</td><td>${fmt(mean(a.map(r => r.peak)))}</td><td>${fmt(pw, 0)}</td><td>${fmt(work, 2)}</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td>${mine}</tr>`;
   }).join('');
 }
+
+$('sets').addEventListener('input', e => {
+  const el = e.target; if (!el.classList.contains('mine')) return;
+  const n = +el.dataset.set; if (!setMeta[n]) setMeta[n] = { movement: 'swing', kg: null, trueReps: null };
+  const v = parseInt(el.value, 10); setMeta[n].trueReps = isFinite(v) ? v : null; save();
+});
 
 function drawChart(cur) {
   const c = $('chart'), dpr = window.devicePixelRatio || 1;
