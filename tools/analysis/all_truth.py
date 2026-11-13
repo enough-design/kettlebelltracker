@@ -1,0 +1,24 @@
+"""Truth for every capture, by set: swings, presses, cleans (None = unknown). Built from James's counts and set notes.
+Cleans count every clean in the set, including the one that starts a press set."""
+import os, sys
+sys.path.insert(0, os.path.dirname(__file__))
+from ohp_common import CAPS as OHP
+RAW = 'data/raw/'
+T = {  # file: {set: (swings, presses, cleans)}
+ 'kb_raw_2026-11-11-13-05-20_12kg_2x10.csv': {1: (10, 0, 0), 2: (10, 0, 0)},
+ 'kb_raw_2026-11-11-13-50-08_12kg_4x10.csv': {1: (10, 0, 0), 2: (10, 0, 0), 3: (10, 0, 0), 4: (10, 0, 0)},
+ 'kb_raw_2026-11-11-14-15-55_20kg_4sets.csv': {1: (11, 0, 0), 2: (10, 0, 0), 3: (10, 0, 0), 4: (10, 0, 0)},
+ 'kb_raw_2026-11-12-14-56-28_20kg_half-swings-set1.csv': {1: (10, 0, 0), 2: (10, 0, 0)},          # set 1 all half swings
+ 'kb_raw_12kg-swings_2026-11-13-15-47-38.csv': {1: (10, 0, 0), 2: (7, 0, 0), 3: (0, 0, 0)},        # set 2: 6 full + 1 partial; set 3 floor bangs
+ # press captures: swings / cleans from the set notes (None where the note does not give a number)
+ OHP['A'][0]: {1: (0, 8, 1), 2: (0, 8, 1), 3: (0, 8, 1)},
+ OHP['B'][0]: {1: (0, 8, 1), 2: (0, None, 1), 3: (0, 8, 1)},
+ OHP['C'][0]: {1: (0, 8, 1), 2: (0, 8, 1), 3: (0, 8, 1)},
+ OHP['D'][0]: {1: (0, 8, 1), 2: (0, 8, 1)},
+ OHP['E'][0]: {1: (0, 8, 1), 2: (0, 8, 1), 3: (0, 8, 1), 4: (0, 0, 8)},
+ OHP['F'][0]: {1: (0, 8, 1), 2: (0, 10, 1)},
+ OHP['G'][0]: {1: (0, 8, 4), 2: (4, 4, 1), 3: (0, 10, 1), 4: (0, 8, 1)},
+ OHP['H'][0]: {1: (0, 8, 1), 2: (0, 8, 1), 3: (4, 4, 1)},
+ OHP['I'][0]: {1: (0, 8, 1), 2: (0, 8, 1), 3: (0, None, 4), 4: (0, 4, 5), 5: (0, 4, 4)},
+ OHP['J'][0]: {1: (0, 8, 4), 2: (None, 6, 1), 3: (4, 4, 1), 4: (0, 4, 4)},
+}
