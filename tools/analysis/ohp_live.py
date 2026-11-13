@@ -1,4 +1,6 @@
-"""Causal (live) overhead-press counter: the reference the page implementation must match.
+"""SUPERSEDED - kept for the record: this purely causal version did NOT work (4/23 exact; slow ringing after the clean). The page uses fixed-lag re-computation instead (ohp_fixedlag.py, OHP block in index.html).
+
+Causal (live) overhead-press counter: the reference the page implementation must match.
 
 Per sample at 50 Hz: gravity direction = causal low-pass of accel; vertical accel = accel . g_hat - 1 g;
 causal band-pass; integrate to velocity and height with causal high-pass after each step.
