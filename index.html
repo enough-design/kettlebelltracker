@@ -332,7 +332,7 @@ function updateRawInfo() {
   const small = rawStats.perPacket <= 1;
   el.textContent = `Raw ${hz.toFixed(0)} Hz · ${rawStats.perPacket} sample${rawStats.perPacket === 1 ? '' : 's'}/packet · ${raw.length.toLocaleString()} recorded` +
     (rawStats.lost ? ` · ${rawStats.lost} packet(s) lost` : '') +
-    (small ? ' · small packet size negotiated, so the stream is thinned to 25 Hz (rep counting is unaffected)' : '');
+    (small ? ' · small packet size negotiated, so the stream is thinned to 25 Hz (swing counting is unaffected; press counting needs about 50 Hz)' : '');
   el.className = 'rawinfo' + (small || rawStats.lost ? ' warn' : '');
 }
 
@@ -345,11 +345,154 @@ async function resetAll() {
   save(); updateButtons(); render();
 }
 
+/* OHP-DETECTOR START (overhead press counter; mirrors tools/analysis/ohp_vertical.py reps_v2) */
+const OHP = (() => {
+  const FS = 50, CLEAN = 450, END_BURST = 250, PROM = 0.3, SHORT_FRAC = 0.8, LIVE_LAG = 1.0;
+  const F = {
+    LP: { sos: [[0.00034604133763910385, 0.0006920826752782077, 0.00034604133763910385, 1.0, -1.9466975407561833, 0.9480817061067397]], zi: [[0.9996539586623651, -0.9477356647691043]], pad: 9 },
+    BP: { sos: [[0.044157196394093684, 0.08831439278818737, 0.044157196394093684, 1.0, -1.3309555967298963, 0.5095097187836408], [1.0, -2.0, 1.0, 1.0, -1.98226563125227, 0.9824297820610058]], zi: [[0.9450598742888766, -0.4598585151055635], [-0.9892170706829704, 0.9892170706829704]], pad: 15 },
+    HP: { sos: [[0.991153595101663, -1.982307190203326, 0.991153595101663, 1.0, -1.9822289297925284, 0.9823854506141251]], zi: [[-0.991153595101663, 0.991153595101663]], pad: 9 },
+  };
+  // scipy.signal.sosfiltfilt with padtype 'odd' and default padlen
+  function filtfilt(f, x) {
+    const n = x.length, p = f.pad; if (n <= p) return Float64Array.from(x);
+    const e = new Float64Array(n + 2 * p);
+    for (let i = 0; i < p; i++) e[i] = 2 * x[0] - x[p - i];
+    for (let i = 0; i < n; i++) e[p + i] = x[i];
+    for (let i = 0; i < p; i++) e[p + n + i] = 2 * x[n - 1] - x[n - 2 - i];
+    let y = cascade(f, e, e[0]);
+    y.reverse(); y = cascade(f, y, y[0]); y.reverse();
+    return y.slice(p, p + n);
+  }
+  function cascade(f, x, x0) {            // scipy sosfilt(sos, x, zi=sosfilt_zi(sos)*x0)
+    let v = Float64Array.from(x);
+    f.sos.forEach((s, j) => {
+      let z0 = f.zi[j][0] * x0, z1 = f.zi[j][1] * x0; const out = new Float64Array(v.length);
+      for (let n = 0; n < v.length; n++) {
+        const xn = v[n], yn = s[0] * xn + z0;
+        z0 = s[1] * xn - s[4] * yn + z1; z1 = s[2] * xn - s[5] * yn; out[n] = yn;
+      }
+      v = out;
+    });
+    return v;
+  }
+  // scipy.signal.find_peaks(x, height, distance, prominence) -> {idx, prom}
+  function findPeaks(x, { height = -Infinity, distance = 1, prominence = null } = {}) {
+    let pk = []; const n = x.length; let i = 1;
+    while (i < n - 1) {
+      if (x[i - 1] < x[i]) {
+        let ahead = i + 1; while (ahead < n - 1 && x[ahead] === x[i]) ahead++;
+        if (x[ahead] < x[i]) { pk.push((i + ahead - 1) >> 1); i = ahead; }
+      }
+      i++;
+    }
+    pk = pk.filter(k => x[k] >= height);
+    if (distance > 1 && pk.length) {
+      const keep = new Array(pk.length).fill(true);
+      const order = pk.map((_, j) => j).sort((a, b) => x[pk[a]] - x[pk[b]]);   // ascending, scipy uses argsort then reversed priority
+      for (let oi = order.length - 1; oi >= 0; oi--) {
+        const j = order[oi]; if (!keep[j]) continue;
+        let k = j - 1; while (k >= 0 && pk[j] - pk[k] < distance) { keep[k] = false; k--; }
+        k = j + 1; while (k < pk.length && pk[k] - pk[j] < distance) { keep[k] = false; k++; }
+      }
+      pk = pk.filter((_, j) => keep[j]);
+    }
+    const prom = pk.map(k => {
+      let lm = x[k], j = k; while (j > 0 && x[j - 1] <= x[k]) { j--; if (x[j] < lm) lm = x[j]; }
+      let rm = x[k]; j = k; while (j < n - 1 && x[j + 1] <= x[k]) { j++; if (x[j] < rm) rm = x[j]; }
+      return x[k] - Math.max(lm, rm);
+    });
+    if (prominence == null) return { idx: pk, prom };
+    const idx = [], pr = [];
+    pk.forEach((k, j) => { if (prom[j] >= prominence) { idx.push(k); pr.push(prom[j]); } });
+    return { idx, prom: pr };
+  }
+  // samples: arrays ax, ay, az (g), gm (dps), t (s)
+  function heightTrace(s) {
+    const n = s.ax.length, G = [s.ax, s.ay, s.az].map(a => filtfilt(F.LP, a));
+    const av = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const gn = Math.hypot(G[0][i], G[1][i], G[2][i]) || 1;
+      av[i] = ((s.ax[i] * G[0][i] + s.ay[i] * G[1][i] + s.az[i] * G[2][i]) / gn - 1) * 9.81;
+    }
+    const ab = filtfilt(F.BP, av);
+    const cv = new Float64Array(n); let acc = 0; for (let i = 0; i < n; i++) { acc += ab[i]; cv[i] = acc / FS; }
+    const v = filtfilt(F.HP, cv);
+    const cz = new Float64Array(n); acc = 0; for (let i = 0; i < n; i++) { acc += v[i]; cz[i] = acc / FS; }
+    return filtfilt(F.HP, cz);
+  }
+  const maxBefore = (g, k) => { let m = 0; for (let j = Math.max(0, k - 50); j <= k; j++) if (g[j] > m) m = g[j]; return m; };
+  function rise(z, p) {
+    return p.map((k, i) => { const j0 = i ? p[i - 1] : Math.max(0, k - 4 * FS); let m = Infinity; for (let j = j0; j < k; j++) if (z[j] < m) m = z[j]; return z[k] - m; });
+  }
+  function shortFlags(r) {          // a rep is short if under 80% of the taller half of the interior reps; last rep never judged
+    if (r.length < 4) return r.map(() => false);
+    const inner = r.slice(1, -1).sort((a, b) => a - b), top = inner.slice(inner.length >> 1);
+    const ref = top.length % 2 ? top[top.length >> 1] : (top[top.length / 2 - 1] + top[top.length / 2]) / 2;
+    return r.map((x, i) => i > 0 && i < r.length - 1 && x < SHORT_FRAC * ref);   // first and last reps read high, never judged
+  }
+  // Final count for a finished set (same rule as the Python reps_v2)
+  function finalReps(s) {
+    const n = s.ax.length; if (n < 4 * FS) return [];
+    const z = heightTrace(s), g = s.gm, t = s.t;
+    const bp = findPeaks(g, { height: END_BURST, distance: 40 }).idx;
+    if (bp.length < 2) return [];
+    const end = t[bp[bp.length - 1]];
+    const cl = bp.slice(0, -1).filter(k => g[k] >= CLEAN).map(k => t[k]);
+    const start = cl.length ? cl[cl.length - 1] : t[bp[0]];
+    const p = findPeaks(z, { prominence: PROM, distance: 30 }).idx.filter(k => t[k] > start + 0.5 && t[k] < end && maxBefore(g, k) < CLEAN);
+    const r = rise(z, p), sh = shortFlags(r);
+    return p.map((k, i) => ({ k, t: t[k], rise: r[i], short: sh[i] }));
+  }
+  // Live (provisional) count while the set is running: humps older than LIVE_LAG s, after the last clean that has a press after it
+  function liveReps(s) {
+    const n = s.ax.length; if (n < 4 * FS) return { start: null, reps: [] };
+    const z = heightTrace(s), g = s.gm, t = s.t, tnow = t[n - 1];
+    const bp = findPeaks(g, { height: CLEAN, distance: 40 }).idx;
+    const p = findPeaks(z, { prominence: PROM, distance: 30 }).idx.filter(k => t[k] < tnow - LIVE_LAG && maxBefore(g, k) < CLEAN);
+    const cl = bp.map(k => t[k]).filter(c => p.some(k => t[k] > c + 0.5));
+    const start = cl.length ? cl[cl.length - 1] : -1;
+    const q = p.filter(k => t[k] > start + 0.5), r = rise(z, q);
+    return { start, reps: q.map((k, i) => ({ k, t: t[k], rise: r[i] })) };
+  }
+  return { finalReps, liveReps, heightTrace, findPeaks, filtfilt, F, FS };
+})();
+/* OHP-DETECTOR END */
+
+// Samples of one set's work phase from the raw stream, in the units the detector expects
+function pressSamples(set) {
+  const rows = raw.filter(r => r.set === set && r.phase === 'work');
+  const n = rows.length, s = { ax: new Float64Array(n), ay: new Float64Array(n), az: new Float64Array(n), gm: new Float64Array(n), t: new Float64Array(n), epoch: new Float64Array(n) };
+  let tt = 0;
+  rows.forEach((r, i) => {
+    if (i) { let d = r.ms - rows[i - 1].ms; if (d < 0 || d > 5000) d = r.t - rows[i - 1].t; tt += d / 1000; }   // survives a board restart
+    s.ax[i] = r.ax / 1000; s.ay[i] = r.ay / 1000; s.az[i] = r.az / 1000; s.gm[i] = Math.hypot(r.gx, r.gy, r.gz); s.t[i] = tt; s.epoch[i] = r.t;
+  });
+  return s;
+}
+let pressLive = { set: 0, start: null, n: 0, short: 0 };
+function updatePressLive() {
+  if (phase !== 'work' || moveOf(curSet) !== 'press') return;
+  const s = pressSamples(curSet); const L = OHP.liveReps(s);
+  if (pressLive.set !== curSet) pressLive = { set: curSet, start: null, n: 0, short: 0 };
+  if (L.start !== pressLive.start && L.start > (pressLive.start ?? -2)) { pressLive.start = L.start; pressLive.n = L.reps.length; }   // a clean restarted the count
+  else pressLive.n = Math.max(pressLive.n, L.reps.length);   // live count never steps back; the exact count comes at Rest/Stop
+}
+function finalizePress(set) {
+  if (!set || moveOf(set) !== 'press') return;
+  const s = pressSamples(set); if (!s.t.length) return;
+  const reps = OHP.finalReps(s).map(r => ({ t: s.epoch[r.k], rise: r.rise, short: r.short }));
+  setMeta[set].press = { reps };
+}
+const pressCount = s => { const m = setMeta[s]; if (m && m.press) return m.press.reps.length; return s === pressLive.set ? pressLive.n : null; };
+const pressShort = s => { const m = setMeta[s]; return m && m.press ? m.press.reps.filter(r => r.short).length : 0; };
+
 // ---------- Phases ----------
 function setPhase(p) {
   const now = Date.now();
   const open = phases[phases.length - 1];
   if (open && open.t1 == null) open.t1 = now;
+  if (phase === 'work' && p !== 'work') finalizePress(curSet);   // exact press count once the set ends
   if (p === 'work') { curSet++; setMeta[curSet] = { movement: $('move').value, kg: kgValue() || null, trueReps: null }; }
   phase = p; phaseStart = now;
   if (p !== 'idle') phases.push({ phase: p, set: curSet, t0: now, t1: null });
@@ -455,8 +598,14 @@ $('btnCsv').onclick = () => {
       movement: r.set ? moveOf(r.set) : '', your_count: (setMeta[r.set] && setMeta[r.set].trueReps != null) ? setMeta[r.set].trueReps : '', set_description: setDesc(r.set), ...capCols()
     };
   });
+  Object.keys(setMeta).map(Number).sort((a, b) => a - b).forEach(s => {
+    const m = setMeta[s]; if (!m.press) return;
+    m.press.reps.forEach((r, i) => rows.push({ time: new Date(r.t).toISOString(), phase: 'work', set: s, rep_in_set: i + 1, counted: 1, bell_kg: kgForSet(s) || '',
+      movement: 'press', press_height_cm: (r.rise * 100).toFixed(0), short_rep: r.short ? 1 : 0,
+      your_count: m.trueReps != null ? m.trueReps : '', set_description: setDesc(s), ...capCols() }));
+  });
   download(fname('reps'), csv(rows, ['time', 'phase', 'set', 'rep_in_set', 'counted', 'full_swing', 'device_set', 'device_total', 'peak_g', 'interval_ms',
-    'gyro_peak_dps', 'sweep_deg', 'gyro_launch_dps', 'bell_kg', 'radius_measured_m', 'radius_used_m', 'speed_ms', 'energy_j', 'power_w', 'movement', 'your_count', 'set_description', 'session_name', 'description']));
+    'gyro_peak_dps', 'sweep_deg', 'gyro_launch_dps', 'bell_kg', 'radius_measured_m', 'radius_used_m', 'speed_ms', 'energy_j', 'power_w', 'movement', 'press_height_cm', 'short_rep', 'your_count', 'set_description', 'session_name', 'description']));
 };
 $('btnRawCsv').onclick = () => {
   if (!raw.length) { setStatus('No raw data yet - press Start set while connected'); return; }
@@ -479,14 +628,18 @@ function render() {
   const lastM = mets[mets.length - 1];
 
   const nShort = cur.filter(isShort).length;
-  $('repsInSet').textContent = press ? '–' : cur.length;
+  const pc = press ? pressCount(curSet) : null, ps = press ? pressShort(curSet) : 0;
+  const pressFinal = press && setMeta[curSet] && setMeta[curSet].press;
+  $('repsInSet').textContent = press ? (pc == null ? '–' : pc) : cur.length;
   $('move').disabled = phase === 'work';
   $('moveHint').textContent = press
-    ? 'Press: recording only. The swing counter is ignored; type how many reps you actually did in the Sets table.'
+    ? 'Press: reps counted from the bell\'s up-and-down movement, about a second behind you. Start each set with a clean; a clean restarts the count, so swings or cleans before it are ignored. The exact count is shown when you press Rest or Stop.'
     : 'Swings: reps counted live and flagged if short.';
-  $('repsShort').textContent = nShort ? nShort + ' short (not full swings)' : '';
+  $('repsShort').textContent = press
+    ? (phase === 'work' && moveOf(curSet) === 'press' ? 'live count' + (rawRate() && rawRate() < 40 ? ' - raw stream below 40 Hz, count may be off' : '') : (pressFinal ? (ps ? ps + ' short (not full presses)' : 'final count') : ''))
+    : (nShort ? nShort + ' short (not full swings)' : '');
   $('setNo').textContent = curSet || '–';
-  $('total').textContent = counted.length;
+  $('total').textContent = counted.length + Object.keys(setMeta).reduce((a, s) => a + (setMeta[s].press ? setMeta[s].press.reps.length : 0), 0);
   $('last').textContent = last && last.interval ? fmt(last.interval / 1000) : '–';
   $('avg').textContent = fmt(mean(cur.filter(r => r.interval).map(r => r.interval / 1000)));
   $('peak').textContent = last ? fmt(last.peak) : '–';
@@ -505,7 +658,7 @@ function render() {
   else $('hint').textContent = '';
 
   $('pnote').textContent = press
-    ? 'Overhead press capture: the raw stream is recorded for training. Enter your own rep count for each set in the Sets table (saved as your_count in the CSVs). No live rep count or power for presses yet.'
+    ? 'Overhead press: the count comes from the raw stream (started automatically by Start set). Reps clearly shorter than the rest of the set are flagged as short (the first and last rep of a set are not judged). Please keep entering your own count in the Sets table while this is being tested. No power estimate for presses yet.'
     : kg
     ? 'Power is an estimate: bell speed and swing angle from the sensor give the energy lifted each rep (½mv² + mgh), divided by the time per rep. Assumes a typical swing radius of ' + r0.toFixed(2) + ' m (see Advanced). Good for comparing reps and sessions, not lab-grade watts. The first swing of a set has no power reading. Short swings (bell not reaching the float point) are counted but excluded from power and energy.'
     : 'Enter the kettlebell weight above to see power and energy.';
@@ -527,7 +680,8 @@ function render() {
     const dur = type => phases.filter(p => p.phase === type && p.set === s).reduce((x, p) => x + ((p.t1 ?? now) - p.t0), 0);
     const sh = a.filter(isShort).length;
     const mine = `<td><input class="mine" type="number" inputmode="numeric" min="0" max="999" data-set="${s}" value="${setMeta[s] && setMeta[s].trueReps != null ? setMeta[s].trueReps : ''}" aria-label="Reps you actually did in set ${s}"></td><td><input class="note" type="text" maxlength="120" placeholder="e.g. last 3 half reps" data-set="${s}" value="${(setMeta[s] && setMeta[s].desc || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}" aria-label="Notes for set ${s}"></td>`;
-    if (isPressSet(s)) return `<tr><td>${s}</td><td>${MOVE_LABEL.press} ${kgForSet(s) || ''}${kgForSet(s) ? ' kg' : ''}</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td>${mine}</tr>`;
+    if (isPressSet(s)) { const pcs = pressCount(s), pss = pressShort(s);
+      return `<tr><td>${s}</td><td>${MOVE_LABEL.press} ${kgForSet(s) || ''}${kgForSet(s) ? ' kg' : ''}</td><td>${pcs == null ? '–' : pcs}${pss ? ` <span style="color:#ffb020">(${pss} short)</span>` : ''}</td><td>–</td><td>–</td><td>–</td><td>–</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td>${mine}</tr>`; }
     return `<tr><td>${s}</td><td>${MOVE_LABEL[moveOf(s)]} ${kgForSet(s) || ''}${kgForSet(s) ? ' kg' : ''}</td><td>${a.length}${sh ? ` <span style="color:#ffb020">(${sh} short)</span>` : ''}</td><td>${fmt(mean(a.filter(r => r.interval).map(r => r.interval / 1000)))}</td><td>${fmt(mean(a.map(r => r.peak)))}</td><td>${fmt(pw, 0)}</td><td>${fmt(work, 2)}</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td>${mine}</tr>`;
   }).join('');
 }
@@ -561,6 +715,7 @@ function drawChart(cur) {
 
 setInterval(() => {
   $('phaseTime').textContent = phase === 'idle' ? '–' : mmss(Date.now() - phaseStart);
+  if (phase === 'work' && moveOf(curSet) === 'press') { updatePressLive(); render(); }
   if (phase === 'rest') render(); // keeps the rest column ticking
   updateRawInfo();
 }, 500);
