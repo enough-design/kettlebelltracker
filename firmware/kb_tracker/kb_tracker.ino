@@ -49,7 +49,7 @@
 const float    LOW_G        = 0.55;   // |a| below this = float (bell weightless)
 const float    EXIT_G       = 0.9;    // float is over once |a| rises above this again
 const float    ARM_G        = 1.5;    // a swing must have exceeded this since the last rep
-const uint32_t MIN_FLOAT_MS = 20;     // |a| must stay below LOW_G this long (glitch filter)
+const uint32_t MIN_FLOAT_MS = 150;    // |a| must stay below LOW_G this long. Was 20; bangs on the floor and putting the bell down float only 40-60 ms, real swings 500+ ms (150-250 all tested OK)
 const uint32_t MIN_REP_GAP  = 900;    // ms, ignores the shallow dip in the middle of a swing
 const uint32_t SET_TIMEOUT  = 8000;   // ms without a rep before the next rep starts a new set
 const uint32_t METRIC_WINDOW_MS = 1500; // peak must be this recent for metrics to be valid
