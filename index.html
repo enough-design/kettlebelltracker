@@ -100,6 +100,7 @@
     <select id="move">
       <option value="swing">Kettlebell swings</option>
       <option value="press">Overhead press</option>
+      <option value="auto">Auto-detect (trial)</option>
     </select>
     <div class="sub" id="moveHint"></div>
   </div>
@@ -197,10 +198,10 @@ function weightChanged() {
 }
 const kgForSet = s => { const m = setMeta[s]; return m && m.kg != null ? m.kg : kgValue(); };
 const moveOf = s => (setMeta[s] && setMeta[s].movement) || 'swing';
-const MOVE_LABEL = { swing: 'Swing', press: 'Press' };
+const MOVE_LABEL = { swing: 'Swing', press: 'Press', auto: 'Auto' };
 const curMove = () => (phase !== 'idle' && setMeta[curSet]) ? moveOf(curSet) : $('move').value;
 ['kb_move', 'kb_name', 'kb_desc'].forEach(k => { try { const v = localStorage.getItem(k); if (v != null) $({ kb_move: 'move', kb_name: 'sname', kb_desc: 'sdesc' }[k]).value = v; } catch (e) {} });
-if (!['swing', 'press'].includes($('move').value)) $('move').value = 'swing';
+if (!['swing', 'press', 'auto'].includes($('move').value)) $('move').value = 'swing';
 [['move', 'kb_move'], ['sname', 'kb_name'], ['sdesc', 'kb_desc']].forEach(([id, key]) =>
   $(id).addEventListener(id === 'move' ? 'change' : 'input', () => { try { localStorage.setItem(key, $(id).value); } catch (e) {} render(); }));
 const slug = t => t.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50);
@@ -464,7 +465,39 @@ const OHP = (() => {
     const p = H.filter(h => h.press).map(h => h.k), r = rise(z, p);
     return { other: H.filter(h => !h.press).length, reps: p.map((k, i) => ({ k, t: s.t[k], rise: r[i] })) };
   }
-  const OHP = { finalReps, liveReps, heightTrace, findPeaks, filtfilt, F, FS };
+  // ---- Auto mode (trial): label every rep as swing, clean or press (mirrors tools/analysis/moves_v5.py) ----
+  const FLOAT_MIN = 0.29, AUTO_CLEAN = 400, CLEAN_ROT = 210, UP_WIN = 15, SWING_DEPTH = 0.18;
+  function labelSet(s, tmax = Infinity) {
+    const n = s.ax.length; if (n < 4 * FS) return { swings: [], cleans: [], presses: [] };
+    const z = heightTrace(s), g = s.gm, t = s.t, a = new Float64Array(n);
+    for (let i = 0; i < n; i++) a[i] = Math.hypot(s.ax[i], s.ay[i], s.az[i]);
+    const H = findPeaks(z, { prominence: PROM, distance: 30 }).idx.map(k => {
+      let run = 0, best = 0, amin = Infinity, rot = 0, mv = 0;
+      for (let j = Math.max(0, k - 50); j < Math.min(n, k + 38); j++) { if (a[j] < 0.55) { run++; if (run > best) best = run; } else run = 0; if (a[j] < amin) amin = a[j]; }
+      for (let j = Math.max(0, k - 38); j < Math.min(n, k + 13); j++) rot += g[j];
+      for (let j = Math.max(0, k - 75); j < Math.max(1, k - 10); j++) if (g[j] > mv) mv = g[j];
+      rot /= FS; const fl = best / FS;
+      return { k, t: t[k], fl, amin, rot, pre: maxBefore(g, k), mv, swingLike: fl >= FLOAT_MIN && rot >= 100 };   // swing: a real float plus rotation
+    });
+    // clean: a hard twist while the bell is rising, with plenty of rotation, away from swings
+    const cl = findPeaks(g, { height: AUTO_CLEAN, distance: 30 }).idx.filter(k => {
+      if (z[Math.min(n - 1, k + UP_WIN)] - z[Math.max(0, k - UP_WIN)] <= 0) return false;
+      let r = 0; for (let j = Math.max(0, k - 25); j < Math.min(n, k + 25); j++) r += g[j];
+      return r / FS >= CLEAN_ROT && !H.some(h => h.swingLike && Math.abs(t[k] - h.t) < 1.0);
+    });
+    const ct = cl.map(k => t[k]);
+    // presses are decided before swings: fast and push presses can also float briefly
+    H.forEach(h => { h.press = h.rot > ROT_MIN && h.rot < ROT_MAX && h.pre < PRE_MAX && h.mv >= MOVE_MIN && ct.some(c => c < h.t) && !ct.some(c => h.t - c >= 0 && h.t - c < CLEAN_GUARD); });
+    for (let j = H.length - 2; j >= 0; j--)
+      if (H[j].press && !H[j + 1].press && H[j + 1].swingLike && H[j + 1].t - H[j].t <= SWING_GAP) H[j].press = false;
+    const P = H.filter(h => h.press), r = rise(z, P.map(h => h.k)), sh = shortFlags(r);
+    return {
+      swings: H.filter(h => h.swingLike && !h.press && h.t <= tmax).map(h => ({ k: h.k, t: h.t, depth: h.amin, short: h.amin > SWING_DEPTH })),
+      cleans: cl.filter(k => t[k] <= tmax).map(k => ({ k, t: t[k] })),
+      presses: P.map((h, i) => ({ k: h.k, t: h.t, rise: r[i], short: sh[i] })).filter(q => q.t <= tmax)
+    };
+  }
+  const OHP = { finalReps, liveReps, labelSet, LIVE_LAG, heightTrace, findPeaks, filtfilt, F, FS };
   return OHP;
 })();
 /* OHP-DETECTOR END */
@@ -495,6 +528,29 @@ function finalizePress(set) {
   const reps = OHP.finalReps(s).map(r => ({ t: s.epoch[r.k], rise: r.rise, short: r.short }));
   setMeta[set].press = { reps };
 }
+// ---- Auto mode: the page labels swings, cleans and presses itself ----
+const AUTO_KEYS = ['swings', 'cleans', 'presses'];
+let autoLive = { set: 0, hist: [], n: { swings: 0, cleans: 0, presses: 0 } };
+function updateAutoLive() {
+  if (phase !== 'work' || moveOf(curSet) !== 'auto') return;
+  if (autoLive.set !== curSet) autoLive = { set: curSet, hist: [], n: { swings: 0, cleans: 0, presses: 0 } };
+  const s = pressSamples(curSet), L = OHP.labelSet(s, s.t.length ? s.t[s.t.length - 1] - OHP.LIVE_LAG : 0);
+  autoLive.hist.push({ swings: L.swings.length, cleans: L.cleans.length, presses: L.presses.length });
+  if (autoLive.hist.length > LIVE_HOLD) autoLive.hist.shift();
+  if (autoLive.hist.length === LIVE_HOLD) AUTO_KEYS.forEach(k => { autoLive.n[k] = Math.max(autoLive.n[k], Math.min(...autoLive.hist.map(h => h[k]))); });
+}
+function finalizeAuto(set) {
+  if (!set || moveOf(set) !== 'auto') return;
+  const s = pressSamples(set); if (!s.t.length) return;
+  const L = OHP.labelSet(s), ep = r => s.epoch[r.k];
+  setMeta[set].auto = { swings: L.swings.map(r => ({ t: ep(r), depth: r.depth, short: r.short })), cleans: L.cleans.map(r => ({ t: ep(r) })),
+                        presses: L.presses.map(r => ({ t: ep(r), rise: r.rise, short: r.short })) };
+}
+// counts for an auto set: final if the set has ended, live while it runs
+const autoCounts = s => { const m = setMeta[s]; if (m && m.auto) return { swings: m.auto.swings.length, cleans: m.auto.cleans.length, presses: m.auto.presses.length, final: true };
+  return s === autoLive.set ? { ...autoLive.n, final: false } : null; };
+const autoShort = s => { const m = setMeta[s]; return m && m.auto ? m.auto.swings.filter(r => r.short).length + m.auto.presses.filter(r => r.short).length : 0; };
+const nanoSwings = s => reps.filter(r => r.set === s && r.phase === 'work').length;   // the Nano's own swing count, as a cross-check
 const pressCount = s => { const m = setMeta[s]; if (m && m.press) return m.press.reps.length; return s === pressLive.set ? pressLive.n : null; };
 const pressShort = s => { const m = setMeta[s]; return m && m.press ? m.press.reps.filter(r => r.short).length : 0; };
 
@@ -503,7 +559,7 @@ function setPhase(p) {
   const now = Date.now();
   const open = phases[phases.length - 1];
   if (open && open.t1 == null) open.t1 = now;
-  if (phase === 'work' && p !== 'work') finalizePress(curSet);   // exact press count once the set ends
+  if (phase === 'work' && p !== 'work') { finalizePress(curSet); finalizeAuto(curSet); }   // exact counts once the set ends
   if (p === 'work') { curSet++; setMeta[curSet] = { movement: $('move').value, kg: kgValue() || null, trueReps: null }; }
   phase = p; phaseStart = now;
   if (p !== 'idle') phases.push({ phase: p, set: curSet, t0: now, t1: null });
@@ -541,7 +597,7 @@ function addRep(d) {
   const prevAny = reps[reps.length - 1];
   if (prevAny && prevAny.devTotal === d.devTotal && prevAny.devSet === d.devSet) return; // duplicate after reconnect
   const t = Date.now();
-  const isPress = phase === 'work' && moveOf(curSet) === 'press';
+  const isPress = phase === 'work' && moveOf(curSet) !== 'swing';   // press and auto sets are counted by the page
   const counted = phase === 'work' && !isPress;   // press sets: swing counter ignored, reps kept for reference
   let repInSet = 0, interval = 0;
   if (counted) {
@@ -606,17 +662,23 @@ $('btnCsv').onclick = () => {
       gyro_peak_dps: r.gyroPk, sweep_deg: r.sweep, gyro_launch_dps: r.gyroLaunch,
       bell_kg: kg || '', radius_measured_m: f(m && m.own, 2), radius_used_m: f(m && m.rad, 2), speed_ms: f(m && m.vPk, 2),
       energy_j: f(m && m.E, 1), power_w: f(m && m.P, 1),
-      movement: r.set ? moveOf(r.set) : '', your_count: (setMeta[r.set] && setMeta[r.set].trueReps != null) ? setMeta[r.set].trueReps : '', set_description: setDesc(r.set), ...capCols()
+      movement: r.set ? moveOf(r.set) : '', set_mode: r.set ? moveOf(r.set) : '', your_count: (setMeta[r.set] && setMeta[r.set].trueReps != null) ? setMeta[r.set].trueReps : '', set_description: setDesc(r.set), ...capCols()
     };
   });
   Object.keys(setMeta).map(Number).sort((a, b) => a - b).forEach(s => {
-    const m = setMeta[s]; if (!m.press) return;
+    const m = setMeta[s];
+    const ar = [];
+    if (m.auto) AUTO_KEYS.forEach(key => m.auto[key].forEach((r, i) => ar.push({ time: new Date(r.t).toISOString(), phase: 'work', set: s, rep_in_set: i + 1, counted: 1, bell_kg: kgForSet(s) || '',
+      movement: key.slice(0, -1).replace('presse', 'press'), set_mode: 'auto', press_height_cm: r.rise != null ? (r.rise * 100).toFixed(0) : '', float_depth_g: r.depth != null ? r.depth.toFixed(2) : '', short_rep: r.short == null ? '' : (r.short ? 1 : 0),
+      your_count: m.trueReps != null ? m.trueReps : '', set_description: setDesc(s), ...capCols() })));
+    ar.sort((x, y) => x.time < y.time ? -1 : 1).forEach(r => rows.push(r));   // in the order they happened
+    if (!m.press) return;
     m.press.reps.forEach((r, i) => rows.push({ time: new Date(r.t).toISOString(), phase: 'work', set: s, rep_in_set: i + 1, counted: 1, bell_kg: kgForSet(s) || '',
-      movement: 'press', press_height_cm: (r.rise * 100).toFixed(0), short_rep: r.short ? 1 : 0,
+      movement: 'press', set_mode: 'press', press_height_cm: (r.rise * 100).toFixed(0), short_rep: r.short ? 1 : 0,
       your_count: m.trueReps != null ? m.trueReps : '', set_description: setDesc(s), ...capCols() }));
   });
   download(fname('reps'), csv(rows, ['time', 'phase', 'set', 'rep_in_set', 'counted', 'full_swing', 'device_set', 'device_total', 'peak_g', 'interval_ms',
-    'gyro_peak_dps', 'sweep_deg', 'gyro_launch_dps', 'bell_kg', 'radius_measured_m', 'radius_used_m', 'speed_ms', 'energy_j', 'power_w', 'movement', 'press_height_cm', 'short_rep', 'your_count', 'set_description', 'session_name', 'description']));
+    'gyro_peak_dps', 'sweep_deg', 'gyro_launch_dps', 'bell_kg', 'radius_measured_m', 'radius_used_m', 'speed_ms', 'energy_j', 'power_w', 'movement', 'set_mode', 'press_height_cm', 'float_depth_g', 'short_rep', 'your_count', 'set_description', 'session_name', 'description']));
 };
 $('btnRawCsv').onclick = () => {
   if (!raw.length) { setStatus('No raw data yet - press Start set while connected'); return; }
@@ -631,7 +693,8 @@ const mmss = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return Math.f
 
 function render() {
   const kg = kgValue(), r0 = radiusSetting(), rMeas = sessionRadius();
-  const press = curMove() === 'press';
+  const press = curMove() === 'press', auto = curMove() === 'auto';
+  const ac = auto ? autoCounts(curSet) : null;
   const counted = reps.filter(r => r.counted);
   const cur = counted.filter(r => r.set === curSet);
   const last = cur[cur.length - 1];
@@ -641,16 +704,21 @@ function render() {
   const nShort = cur.filter(isShort).length;
   const pc = press ? pressCount(curSet) : null, ps = press ? pressShort(curSet) : 0;
   const pressFinal = press && setMeta[curSet] && setMeta[curSet].press;
-  $('repsInSet').textContent = press ? (pc == null ? '–' : pc) : cur.length;
+  $('repsInSet').textContent = auto ? (ac ? `${ac.swings} / ${ac.cleans} / ${ac.presses}` : '– / – / –') : press ? (pc == null ? '–' : pc) : cur.length;
+  $('repsInSet').style.fontSize = auto ? '44px' : '';
   $('move').disabled = phase === 'work';
-  $('moveHint').textContent = press
+  $('moveHint').textContent = auto
+    ? 'Auto-detect (trial): the page labels each rep as a swing, a clean or a press from the raw stream, a few seconds behind you. Exact counts appear when you press Rest or Stop. Please note what you actually did in the set notes so the labels can be checked.'
+    : press
     ? 'Press: reps counted from the bell\'s up-and-down movement; each rep appears about 3 seconds after you finish it. Start each set with a clean. Cleans and swings in the same set are recognised and not counted as presses. The exact count is shown when you press Rest or Stop.'
     : 'Swings: reps counted live and flagged if short.';
-  $('repsShort').textContent = press
+  $('repsShort').textContent = auto
+    ? 'swings / cleans / presses' + (ac ? (ac.final ? ' · final' + (autoShort(curSet) ? ' · ' + autoShort(curSet) + ' short' : '') + ' · Nano counted ' + nanoSwings(curSet) + ' swings' : ' · live' + (rawRate() && rawRate() < 40 ? ' - raw stream below 40 Hz, counts may be off' : '')) : '')
+    : press
     ? (phase === 'work' && moveOf(curSet) === 'press' ? 'live count' + (rawRate() && rawRate() < 40 ? ' - raw stream below 40 Hz, count may be off' : '') : (pressFinal ? (ps ? ps + ' short (not full presses)' : 'final count') : ''))
     : (nShort ? nShort + ' short (not full swings)' : '');
   $('setNo').textContent = curSet || '–';
-  $('total').textContent = counted.length + Object.keys(setMeta).reduce((a, s) => a + (setMeta[s].press ? setMeta[s].press.reps.length : 0), 0);
+  $('total').textContent = counted.length + Object.keys(setMeta).reduce((a, s) => a + (setMeta[s].press ? setMeta[s].press.reps.length : 0) + (setMeta[s].auto ? AUTO_KEYS.reduce((x, k) => x + setMeta[s].auto[k].length, 0) : 0), 0);
   $('last').textContent = last && last.interval ? fmt(last.interval / 1000) : '–';
   $('avg').textContent = fmt(mean(cur.filter(r => r.interval).map(r => r.interval / 1000)));
   $('peak').textContent = last ? fmt(last.peak) : '–';
@@ -665,10 +733,12 @@ function render() {
   $('phase').className = 'phase-' + phase;
 
   if (phase === 'idle' && outside > 0) $('hint').textContent = outside + ' rep(s) arrived outside a set and were not counted - press Start set first.';
-  else if (phase === 'idle') $('hint').textContent = 'Press Start set, ' + (press ? 'press' : 'swing') + ', then Rest or Stop.';
+  else if (phase === 'idle') $('hint').textContent = 'Press Start set, ' + (auto ? 'do your reps' : press ? 'press' : 'swing') + ', then Rest or Stop.';
   else $('hint').textContent = '';
 
-  $('pnote').textContent = press
+  $('pnote').textContent = auto
+    ? 'Auto-detect is a trial: it has only been checked against earlier recordings (7.5, 12 and 20 kg, right hand). A clean is counted when the bell is pulled up to the rack; the drop back down is not counted. Short swings (bell not going weightless) and short presses are flagged. The Nano\'s own swing count is shown next to the final counts as a cross-check. No power estimate in this mode.'
+    : press
     ? 'Overhead press: the count comes from the raw stream (started automatically by Start set). Reps clearly shorter than the rest of the set are flagged as short (the first and last rep of a set are not judged). Please keep entering your own count in the Sets table while this is being tested. No power estimate for presses yet.'
     : kg
     ? 'Power is an estimate: bell speed and swing angle from the sensor give the energy lifted each rep (½mv² + mgh), divided by the time per rep. Assumes a typical swing radius of ' + r0.toFixed(2) + ' m (see Advanced). Good for comparing reps and sessions, not lab-grade watts. The first swing of a set has no power reading. Short swings (bell not reaching the float point) are counted but excluded from power and energy.'
@@ -691,6 +761,8 @@ function render() {
     const dur = type => phases.filter(p => p.phase === type && p.set === s).reduce((x, p) => x + ((p.t1 ?? now) - p.t0), 0);
     const sh = a.filter(isShort).length;
     const mine = `<td><input class="mine" type="number" inputmode="numeric" min="0" max="999" data-set="${s}" value="${setMeta[s] && setMeta[s].trueReps != null ? setMeta[s].trueReps : ''}" aria-label="Reps you actually did in set ${s}"></td><td><input class="note" type="text" maxlength="120" placeholder="e.g. last 3 half reps" data-set="${s}" value="${(setMeta[s] && setMeta[s].desc || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}" aria-label="Notes for set ${s}"></td>`;
+    if (moveOf(s) === 'auto') { const c = autoCounts(s), sh2 = autoShort(s);
+      return `<tr><td>${s}</td><td>${MOVE_LABEL.auto} ${kgForSet(s) || ''}${kgForSet(s) ? ' kg' : ''}</td><td style="white-space:nowrap">${c ? `${c.swings} sw · ${c.cleans} cl · ${c.presses} pr` : '–'}${sh2 ? ` <span style="color:#ffb020">(${sh2} short)</span>` : ''}</td><td>–</td><td>–</td><td>–</td><td>–</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td>${mine}</tr>`; }
     if (isPressSet(s)) { const pcs = pressCount(s), pss = pressShort(s);
       return `<tr><td>${s}</td><td>${MOVE_LABEL.press} ${kgForSet(s) || ''}${kgForSet(s) ? ' kg' : ''}</td><td>${pcs == null ? '–' : pcs}${pss ? ` <span style="color:#ffb020">(${pss} short)</span>` : ''}</td><td>–</td><td>–</td><td>–</td><td>–</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td>${mine}</tr>`; }
     return `<tr><td>${s}</td><td>${MOVE_LABEL[moveOf(s)]} ${kgForSet(s) || ''}${kgForSet(s) ? ' kg' : ''}</td><td>${a.length}${sh ? ` <span style="color:#ffb020">(${sh} short)</span>` : ''}</td><td>${fmt(mean(a.filter(r => r.interval).map(r => r.interval / 1000)))}</td><td>${fmt(mean(a.map(r => r.peak)))}</td><td>${fmt(pw, 0)}</td><td>${fmt(work, 2)}</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td>${mine}</tr>`;
@@ -727,6 +799,7 @@ function drawChart(cur) {
 setInterval(() => {
   $('phaseTime').textContent = phase === 'idle' ? '–' : mmss(Date.now() - phaseStart);
   if (phase === 'work' && moveOf(curSet) === 'press') { updatePressLive(); render(); }
+  if (phase === 'work' && moveOf(curSet) === 'auto') { updateAutoLive(); render(); }
   if (phase === 'rest') render(); // keeps the rest column ticking
   updateRawInfo();
 }, 500);
