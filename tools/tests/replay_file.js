@@ -8,7 +8,7 @@ const rows = L.map(l => l.split(',')).map(c => ({ t: +c[ix('t_epoch_ms')], ms: +
   for (const [s, truth] of Object.entries(TRUTH)) {
     const work = rows.filter(r => r.set === +s && r.phase === 'work');
     const res = await page.evaluate(({ work }) => {
-      reps = []; raw = []; phases = []; setMeta = {}; curSet = 0; phase = 'idle'; pressLive = { set: 0, start: null, n: 0, short: 0 };
+      reps = []; raw = []; phases = []; setMeta = {}; curSet = 0; phase = 'idle'; pressLive = { set: 0, hist: [], n: 0 };
       $('move').value = 'press'; setPhase('work'); const seen = [];
       for (let i = 0; i < work.length; i += 25) { work.slice(i, i + 25).forEach(r => raw.push({ ...r, phase: 'work', set: curSet })); updatePressLive(); seen.push(pressLive.n); }
       setPhase('rest');

@@ -347,7 +347,7 @@ async function resetAll() {
 
 /* OHP-DETECTOR START (overhead press counter; mirrors tools/analysis/ohp_vertical.py reps_v2) */
 const OHP = (() => {
-  const FS = 50, CLEAN = 450, END_BURST = 250, PROM = 0.3, SHORT_FRAC = 0.8, LIVE_LAG = 1.0;
+  const FS = 50, CLEAN = 450, END_BURST = 250, PROM = 0.3, SHORT_FRAC = 0.8, LIVE_LAG = 0.5;
   const F = {
     LP: { sos: [[0.00034604133763910385, 0.0006920826752782077, 0.00034604133763910385, 1.0, -1.9466975407561833, 0.9480817061067397]], zi: [[0.9996539586623651, -0.9477356647691043]], pad: 9 },
     BP: { sos: [[0.044157196394093684, 0.08831439278818737, 0.044157196394093684, 1.0, -1.3309555967298963, 0.5095097187836408], [1.0, -2.0, 1.0, 1.0, -1.98226563125227, 0.9824297820610058]], zi: [[0.9450598742888766, -0.4598585151055635], [-0.9892170706829704, 0.9892170706829704]], pad: 15 },
@@ -431,31 +431,37 @@ const OHP = (() => {
     const ref = top.length % 2 ? top[top.length >> 1] : (top[top.length / 2 - 1] + top[top.length / 2]) / 2;
     return r.map((x, i) => i > 0 && i < r.length - 1 && x < SHORT_FRAC * ref);   // first and last reps read high, never judged
   }
-  // Final count for a finished set (same rule as the Python reps_v2)
+  // v3: each hump is judged on its own (mirrors tools/analysis/ohp_vertical.py reps_v3)
+  const ROT_MIN = 15, ROT_MAX = 170, PRE_MAX = 425, SWING_GAP = 2.25, CLEAN_GUARD = 1.0;
+  function classify(s, tmax, guard = CLEAN_GUARD) {
+    const n = s.ax.length, z = heightTrace(s), g = s.gm, t = s.t;
+    const bursts = findPeaks(g, { height: CLEAN, distance: 40 }).idx.map(k => t[k]);
+    const pk = findPeaks(z, { prominence: PROM, distance: 30 }).idx.filter(k => t[k] <= tmax);
+    const H = pk.map(k => {
+      let rot = 0; for (let j = Math.max(0, k - 38); j < Math.min(n, k + 13); j++) rot += g[j];
+      rot /= FS; const pre = maxBefore(g, k);
+      const press = rot > ROT_MIN && rot < ROT_MAX && pre < PRE_MAX && !bursts.some(b => t[k] - b >= 0 && t[k] - b < guard);
+      return { k, t: t[k], rot, pre, press };
+    });
+    for (let i = H.length - 2; i >= 0; i--)   // the first swings of a run rotate little: drop a press-looking hump right before a swing
+      if (H[i].press && !H[i + 1].press && H[i + 1].t - H[i].t <= SWING_GAP && H[i + 1].pre < CLEAN) H[i].press = false;
+    return { z, H };
+  }
   function finalReps(s) {
-    const n = s.ax.length; if (n < 4 * FS) return [];
-    const z = heightTrace(s), g = s.gm, t = s.t;
-    const bp = findPeaks(g, { height: END_BURST, distance: 40 }).idx;
-    if (bp.length < 2) return [];
-    const end = t[bp[bp.length - 1]];
-    const cl = bp.slice(0, -1).filter(k => g[k] >= CLEAN).map(k => t[k]);
-    const start = cl.length ? cl[cl.length - 1] : t[bp[0]];
-    const p = findPeaks(z, { prominence: PROM, distance: 30 }).idx.filter(k => t[k] > start + 0.5 && t[k] < end && maxBefore(g, k) < CLEAN);
-    const r = rise(z, p), sh = shortFlags(r);
-    return p.map((k, i) => ({ k, t: t[k], rise: r[i], short: sh[i] }));
+    if (s.ax.length < 4 * FS) return [];
+    const { z, H } = classify(s, Infinity);
+    const p = H.filter(h => h.press).map(h => h.k), r = rise(z, p), sh = shortFlags(r);
+    return p.map((k, i) => ({ k, t: s.t[k], rise: r[i], short: sh[i] }));
   }
-  // Live (provisional) count while the set is running: humps older than LIVE_LAG s, after the last clean that has a press after it
+  // Live (provisional) count: humps older than LIVE_LAG s; reports how many non-press humps (cleans, swings) have been seen
   function liveReps(s) {
-    const n = s.ax.length; if (n < 4 * FS) return { start: null, reps: [] };
-    const z = heightTrace(s), g = s.gm, t = s.t, tnow = t[n - 1];
-    const bp = findPeaks(g, { height: CLEAN, distance: 40 }).idx;
-    const p = findPeaks(z, { prominence: PROM, distance: 30 }).idx.filter(k => t[k] < tnow - LIVE_LAG && maxBefore(g, k) < CLEAN);
-    const cl = bp.map(k => t[k]).filter(c => p.some(k => t[k] > c + 0.5));
-    const start = cl.length ? cl[cl.length - 1] : -1;
-    const q = p.filter(k => t[k] > start + 0.5), r = rise(z, q);
-    return { start, reps: q.map((k, i) => ({ k, t: t[k], rise: r[i] })) };
+    const n = s.ax.length; if (n < 4 * FS) return { other: 0, reps: [] };
+    const { z, H } = classify(s, s.t[n - 1] - LIVE_LAG);
+    const p = H.filter(h => h.press).map(h => h.k), r = rise(z, p);
+    return { other: H.filter(h => !h.press).length, reps: p.map((k, i) => ({ k, t: s.t[k], rise: r[i] })) };
   }
-  return { finalReps, liveReps, heightTrace, findPeaks, filtfilt, F, FS };
+  const OHP = { finalReps, liveReps, heightTrace, findPeaks, filtfilt, F, FS };
+  return OHP;
 })();
 /* OHP-DETECTOR END */
 
@@ -470,13 +476,14 @@ function pressSamples(set) {
   });
   return s;
 }
-let pressLive = { set: 0, start: null, n: 0, short: 0 };
+let pressLive = { set: 0, hist: [], n: 0 };
+const LIVE_HOLD = 3;   // a live count must hold for 3 updates (1.5 s) before it is shown; the shown count never steps back
 function updatePressLive() {
   if (phase !== 'work' || moveOf(curSet) !== 'press') return;
-  const s = pressSamples(curSet); const L = OHP.liveReps(s);
-  if (pressLive.set !== curSet) pressLive = { set: curSet, start: null, n: 0, short: 0 };
-  if (L.start !== pressLive.start && L.start > (pressLive.start ?? -2)) { pressLive.start = L.start; pressLive.n = L.reps.length; }   // a clean restarted the count
-  else pressLive.n = Math.max(pressLive.n, L.reps.length);   // live count never steps back; the exact count comes at Rest/Stop
+  if (pressLive.set !== curSet) pressLive = { set: curSet, hist: [], n: 0 };
+  pressLive.hist.push(OHP.liveReps(pressSamples(curSet)).reps.length);
+  if (pressLive.hist.length > LIVE_HOLD) pressLive.hist.shift();
+  if (pressLive.hist.length === LIVE_HOLD) pressLive.n = Math.max(pressLive.n, Math.min(...pressLive.hist));
 }
 function finalizePress(set) {
   if (!set || moveOf(set) !== 'press') return;
@@ -633,7 +640,7 @@ function render() {
   $('repsInSet').textContent = press ? (pc == null ? '–' : pc) : cur.length;
   $('move').disabled = phase === 'work';
   $('moveHint').textContent = press
-    ? 'Press: reps counted from the bell\'s up-and-down movement, about a second behind you. Start each set with a clean; a clean restarts the count, so swings or cleans before it are ignored. The exact count is shown when you press Rest or Stop.'
+    ? 'Press: reps counted from the bell\'s up-and-down movement; each rep appears about 3 seconds after you finish it. Cleans and swings in the same set are recognised and not counted as presses. The exact count is shown when you press Rest or Stop.'
     : 'Swings: reps counted live and flagged if short.';
   $('repsShort').textContent = press
     ? (phase === 'work' && moveOf(curSet) === 'press' ? 'live count' + (rawRate() && rawRate() < 40 ? ' - raw stream below 40 Hz, count may be off' : '') : (pressFinal ? (ps ? ps + ' short (not full presses)' : 'final count') : ''))

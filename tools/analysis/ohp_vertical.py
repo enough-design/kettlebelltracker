@@ -55,12 +55,37 @@ def reps_v2(w, prom=0.3):
     rise = np.array([z[k] - z[(p[i - 1] if i else max(0, k - int(4 * FS))):k].min() for i, k in enumerate(p)])
     return t, z, p, rise
 
+# v3 (13 Nov, after capture I): judge each hump on its own instead of "presses only after the last clean"
+ROT_MIN = 15       # deg: a hump with almost no rotation is a filter artefact in a still period, not a press (presses 27+)
+ROT_MAX = 170      # deg: integral of |gyro| from 0.75 s before to 0.25 s after the peak; presses 27-150, cleans 250+, swings 160-215
+PRE_MAX = 425      # dps: max |gyro| in the 1 s before the peak; cleans 417+ (12 kg cleans can be as low as 417)
+SWING_GAP = 2.25   # s: a press-looking hump followed this closely by a swing-looking hump is the start of a swing run
+CLEAN_GUARD = 1.0  # s: ignore humps within this time after a clean-strength burst (the bell settling into the rack)
+
+def hump_features(w, prom=0.3):
+    z = height_trace(w); t = w.t.values; g = w.gm.values
+    pk, _ = find_peaks(z, prominence=prom, distance=30)
+    rot = np.array([g[max(0, k - 38):k + 13].sum() / FS for k in pk])
+    pre = np.array([g[max(0, k - 50):k + 1].max() for k in pk])
+    return t, z, g, pk, rot, pre
+
+def reps_v3(w, prom=0.3):
+    t, z, g, pk, rot, pre = hump_features(w, prom)
+    bursts = t[find_peaks(g, height=CLEAN_BURST, distance=40)[0]]
+    isp = [(ROT_MIN < r < ROT_MAX) and (q < PRE_MAX) and not any(0 <= t[k] - b < CLEAN_GUARD for b in bursts) for k, r, q in zip(pk, rot, pre)]
+    for i in range(len(pk) - 2, -1, -1):        # drop the first swings of a run (they rotate little)
+        if isp[i] and not isp[i + 1] and t[pk[i + 1]] - t[pk[i]] <= SWING_GAP and pre[i + 1] < CLEAN_BURST:
+            isp[i] = False
+    p = pk[np.array(isp, dtype=bool)] if len(pk) else pk
+    rise = np.array([z[k] - z[(p[i - 1] if i else max(0, k - int(4 * FS))):k].min() for i, k in enumerate(p)])
+    return t, z, p, rise
+
 if __name__ == '__main__':
-    prom = float(sys.argv[1]) if len(sys.argv) > 1 else 0.3
+    prom = float(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1][0] != '-' else 0.3
     ok = tot = 0
     for cap, s, n, lab, d in sets():
         w = d[(d.set == s) & (d.phase == 'work')].reset_index(drop=True)
-        t, z, p, rise = reps_v2(w, prom)
+        t, z, p, rise = (reps_v3 if '--v2' not in sys.argv else reps_v2)(w, prom)
         if n is not None: tot += 1; ok += len(p) == n
         rel = rise / np.median(rise[:3]) if len(rise) >= 3 else rise
         print(f'{cap}{s} truth {n} {lab or "":8s} -> {len(p):2d}  rise cm {np.round(rise*100).astype(int)}  rel {np.round(rel,2)}')

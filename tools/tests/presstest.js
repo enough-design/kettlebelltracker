@@ -10,6 +10,7 @@ const TRUTH = {   // file: {set: truth}
   'kb_raw_12kg-ohp-rh_2026-11-13-14-27-50.csv': { 1: 8, 2: 10 },
   'kb_raw_7-5kg-ohp-rh_2026-11-13-14-38-21.csv': { 1: 8, 2: 4, 3: 10, 4: 8 },
   'kb_raw_20kg-ohp-push-rh_2026-11-13-14-55-29.csv': { 1: 8, 2: 8, 3: 4 },
+  'kb_raw_12kg-ohp_2026-11-13-15-23-02.csv': { 1: 8, 2: 8, 4: 4, 5: 4 },   // set 3 unscored (4 or 5)
 };
 function parse(f) {
   const [h, ...L] = fs.readFileSync('data/raw/' + f, 'utf8').trim().split('\n'); const H = h.split(',');
@@ -27,7 +28,7 @@ function parse(f) {
     for (const [s, truth] of Object.entries(sets)) {
       const work = rows.filter(r => r.set === +s && r.phase === 'work');
       const res = await page.evaluate(({ work }) => {
-        reps = []; raw = []; phases = []; setMeta = {}; curSet = 0; phase = 'idle'; pressLive = { set: 0, start: null, n: 0, short: 0 };
+        reps = []; raw = []; phases = []; setMeta = {}; curSet = 0; phase = 'idle'; pressLive = { set: 0, hist: [], n: 0 };
         $('move').value = 'press'; setPhase('work');
         const seen = [];
         for (let i = 0; i < work.length; i += 25) {           // feed 0.5 s at a time, like the page's timer
