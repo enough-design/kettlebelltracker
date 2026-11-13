@@ -11,6 +11,7 @@ const TRUTH = {   // file: {set: truth}
   'kb_raw_7-5kg-ohp-rh_2026-11-13-14-38-21.csv': { 1: 8, 2: 4, 3: 10, 4: 8 },
   'kb_raw_20kg-ohp-push-rh_2026-11-13-14-55-29.csv': { 1: 8, 2: 8, 3: 4 },
   'kb_raw_12kg-ohp_2026-11-13-15-23-02.csv': { 1: 8, 2: 8, 4: 4, 5: 4 },   // set 3 unscored (4 or 5)
+  'kb_raw_12kg-ohp_2026-11-13-15-44-05.csv': { 1: 8, 2: 6, 3: 4, 4: 4 },
 };
 function parse(f) {
   const [h, ...L] = fs.readFileSync('data/raw/' + f, 'utf8').trim().split('\n'); const H = h.split(',');

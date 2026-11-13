@@ -62,6 +62,9 @@ PRE_MAX = 425      # dps: max |gyro| in the 1 s before the peak; cleans 417+ (12
 SWING_GAP = 2.25   # s: a press-looking hump followed this closely by a swing-looking hump is the start of a swing run
 CLEAN_GUARD = 1.0  # s: ignore humps within this time after a clean-strength burst (the bell settling into the rack)
 
+MOVE_MIN = 35      # dps: a press needs the arm moving in the 1.5 to 0.2 s before its peak (presses 58+); a still bell is not pressing
+# v4 (13 Nov, after capture J): also a press needs a clean earlier in the set (the bell has to be racked first)
+
 def hump_features(w, prom=0.3):
     z = height_trace(w); t = w.t.values; g = w.gm.values
     pk, _ = find_peaks(z, prominence=prom, distance=30)
@@ -72,12 +75,14 @@ def hump_features(w, prom=0.3):
 def reps_v3(w, prom=0.3):
     t, z, g, pk, rot, pre = hump_features(w, prom)
     bursts = t[find_peaks(g, height=CLEAN_BURST, distance=40)[0]]
-    isp = [(ROT_MIN < r < ROT_MAX) and (q < PRE_MAX) and not any(0 <= t[k] - b < CLEAN_GUARD for b in bursts) for k, r, q in zip(pk, rot, pre)]
+    moving = [g[max(0, k - 75):max(1, k - 10)].max() >= MOVE_MIN for k in pk]
+    isp = [(ROT_MIN < r < ROT_MAX) and (q < PRE_MAX) and mv and any(b < t[k] for b in bursts)
+           and not any(0 <= t[k] - b < CLEAN_GUARD for b in bursts) for k, r, q, mv in zip(pk, rot, pre, moving)]
     for i in range(len(pk) - 2, -1, -1):        # drop the first swings of a run (they rotate little)
         if isp[i] and not isp[i + 1] and t[pk[i + 1]] - t[pk[i]] <= SWING_GAP and pre[i + 1] < CLEAN_BURST:
             isp[i] = False
     p = pk[np.array(isp, dtype=bool)] if len(pk) else pk
-    rise = np.array([z[k] - z[(p[i - 1] if i else max(0, k - int(4 * FS))):k].min() for i, k in enumerate(p)])
+    rise = np.array([z[k] - z[max(p[i - 1] if i else 0, k - int(2 * FS)):k].min() for i, k in enumerate(p)])   # 2 s window: a clean between reps must not inflate the rise
     return t, z, p, rise
 
 if __name__ == '__main__':
