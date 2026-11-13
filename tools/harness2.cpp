@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstdint>
 uint16_t g_mtu_value = 23;
+#define KB_HARNESS
 #include "kb_tracker.ino"
 
 static uint16_t u16(const std::vector<uint8_t>& d, int o){ return d[o] | (d[o+1] << 8); }

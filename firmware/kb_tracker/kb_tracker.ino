@@ -1,6 +1,9 @@
 /*
   Kettlebell tracker - Arduino Nano 33 BLE Sense Rev2 (BMI270 + BMM150)
-  Firmware v2: batched raw stream + per-rep metrics for a power estimate.
+  Firmware v3: batched raw stream + per-rep metrics for a power estimate.
+  v3 (13 Nov 2026): accelerometer range raised from +/-4 g to +/-8 g (swings were reaching
+  3.99 g with the Nano on the back face of a 12 kg bell, and clipping silently at 4 g),
+  and minimum float time 150 ms (floor bangs no longer count as swings).
 
   Libraries (Library Manager):
     - ArduinoBLE
@@ -44,6 +47,48 @@
 #include <ArduinoBLE.h>
 #include <utility/ATT.h>
 #include "Arduino_BMI270_BMM150.h"
+
+#define FW_VERSION "v3 (+/-8 g)"
+
+// ---- IMU at +/-8 g ----
+// The library fixes the accelerometer at +/-4 g. This subclass uses the library's own hook
+// (configure_sensor, "can be modified by subclassing") to switch the BMI270 to +/-8 g after
+// the library has set it up. The library still divides raw counts by the 4 g scale factor
+// (8192 counts per g), so readings are doubled to give g at the 8 g scale (4096 counts per g).
+// Gyro is unchanged (+/-2000 dps). Resolution is still about 0.25 mg, far finer than needed.
+#ifndef KB_HARNESS
+class KbIMU : public BoschSensorClass {
+  public:
+    KbIMU(TwoWire& wire) : BoschSensorClass(wire) {}
+    bool rangeOk = false;
+    int readAcceleration(float& x, float& y, float& z) override {
+      int r = BoschSensorClass::readAcceleration(x, y, z);
+      if (rangeOk) { x *= 2; y *= 2; z *= 2; }
+      return r;
+    }
+  protected:
+    using BoschSensorClass::configure_sensor;
+    int8_t configure_sensor(struct bmi2_dev *dev) override {
+      int8_t rslt = BoschSensorClass::configure_sensor(dev);
+      if (rslt != BMI2_OK) return rslt;
+      struct bmi2_sens_config c;
+      c.type = BMI2_ACCEL;
+      rslt = bmi2_get_sensor_config(&c, 1, dev);
+      if (rslt != BMI2_OK) return rslt;
+      c.cfg.acc.range = BMI2_ACC_RANGE_8G;
+      rslt = bmi2_set_sensor_config(&c, 1, dev);
+      if (rslt == BMI2_OK) {   // read it back so the scaling is only applied if the sensor really is at 8 g
+        struct bmi2_sens_config chk; chk.type = BMI2_ACCEL;
+        rangeOk = bmi2_get_sensor_config(&chk, 1, dev) == BMI2_OK && chk.cfg.acc.range == BMI2_ACC_RANGE_8G;
+      }
+      return rslt;
+    }
+};
+KbIMU kbImu(Wire1);   // the BMI270 is on the internal I2C bus (Wire1) on the Nano 33 BLE Sense Rev2
+#define KB_IMU kbImu
+#else
+#define KB_IMU IMU    // test harness (stubbed sensor)
+#endif
 
 // ---- Tuning (start here when calibrating) ----
 const float    LOW_G        = 0.55;   // |a| below this = float (bell weightless)
@@ -304,10 +349,14 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   Serial.begin(115200);
 
-  if (!IMU.begin()) {
+  if (!KB_IMU.begin()) {
     // Fast blink = IMU not found
     while (true) { digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); delay(100); }
   }
+  Serial.print("KB-Tracker firmware "); Serial.println(FW_VERSION);
+#ifndef KB_HARNESS
+  Serial.println(kbImu.rangeOk ? "Accelerometer range +/-8 g" : "WARNING: +/-8 g not set, running at the library default +/-4 g");
+#endif
   if (!BLE.begin()) {
     // Slow blink = BLE failed
     while (true) { digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); delay(500); }
@@ -329,12 +378,12 @@ void loop() {
   BLE.poll();
   handleCommand();
 
-  if (IMU.gyroscopeAvailable()) {
-    IMU.readGyroscope(gx, gy, gz);
+  if (KB_IMU.gyroscopeAvailable()) {
+    KB_IMU.readGyroscope(gx, gy, gz);
   }
-  if (IMU.accelerationAvailable()) {
+  if (KB_IMU.accelerationAvailable()) {
     float ax, ay, az;
-    IMU.readAcceleration(ax, ay, az);
+    KB_IMU.readAcceleration(ax, ay, az);
     processSample(ax, ay, az);
   }
 
