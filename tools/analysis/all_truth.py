@@ -21,4 +21,7 @@ T = {  # file: {set: (swings, presses, cleans)}
  OHP['H'][0]: {1: (0, 8, 1), 2: (0, 8, 1), 3: (4, 4, 1)},
  OHP['I'][0]: {1: (0, 8, 1), 2: (0, 8, 1), 3: (0, None, 4), 4: (0, 4, 5), 5: (0, 4, 4)},
  OHP['J'][0]: {1: (0, 8, 4), 2: (None, 6, 1), 3: (4, 4, 1), 4: (0, 4, 4)},
+ # first blind test of Auto-detect (13 Nov 16:53). Sets 4 and 5: Nano on the BACK face of the bell. Set 1 presses unclear (4 or 5); set 5 note says
+ # '8 cleans into 5 presses' but the data is 8 swings then 5 cleans with drops - to confirm with James.
+ 'kb_raw_12kg-swings_2026-11-13-16-53-01.csv': {1: (8, None, 5), 2: (8, 5, 5), 3: (8, 5, 1), 4: (8, 5, 1), 5: (None, None, None)},
 }

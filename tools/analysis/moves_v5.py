@@ -12,24 +12,33 @@ from ohp_vertical import *
 
 FLOAT_MIN = 0.29; CLEAN_DPS = 400; UP_WIN = 0.3; CLEAN_ROT = 210   # deg of rotation within +-0.5 s of the burst (cleans 240+, picking the bell up 127-164)
 
-def label_set(w, clean_dps=CLEAN_DPS, float_min=FLOAT_MIN, up_win=UP_WIN, prom=0.3, clean_rot=CLEAN_ROT):
-    z = height_trace(w); t = w.t.values; g = w.gm.values; a = w.a.values; n = len(w)
+NX_CLEAN = 80   # deg: net rotation about the board's x axis (USB axis, the bell's vertical axis). A clean spins the bell about it
+                # (108 to 297 deg); swings barely do (under 40). Same sign with the Nano on the front or back face; abs() covers the other hand.
+
+def label_set(w, clean_dps=350, float_min=FLOAT_MIN, up_win=UP_WIN, prom=0.3, nx_clean=NX_CLEAN, clean_rot=CLEAN_ROT):
+    """v6 (after the first blind test of Auto-detect): cleans and swings are told apart by the AXIS of rotation, not by float time."""
+    z = height_trace(w); t = w.t.values; g = w.gm.values; a = w.a.values; gx = w.gx.values; n = len(w)
     pk, _ = find_peaks(z, prominence=prom, distance=30)
     fl = np.array([longest_run(a[max(0, k - 50):min(n, k + 38)] < 0.55) / FS for k in pk])
     rot = np.array([g[max(0, k - 38):k + 13].sum() / FS for k in pk])
     pre = np.array([g[max(0, k - 50):k + 1].max() for k in pk])
     mov = np.array([g[max(0, k - 75):max(1, k - 10)].max() for k in pk])
-    swing_like = (fl >= float_min) & (rot >= 100)
-    # cleans: strong gyro bursts while the bell is going up, away from swing-like humps
+    nxh = np.array([abs(gx[max(0, k - 38):k + 13].sum()) / FS for k in pk])
+    swing_like = (fl >= float_min) & (rot >= 100) & (nxh < nx_clean)
     bp, _ = find_peaks(g, height=clean_dps, distance=30)
     u = int(up_win * FS)
-    cl_t = np.array([t[k] for k in bp if z[min(n - 1, k + u)] - z[max(0, k - u)] > 0 and g[max(0, k - 25):k + 25].sum() / FS >= clean_rot and not any(abs(t[k] - s) < 1.0 for s in t[pk[swing_like]])])
-    # presses first (they can also float briefly), then swings from what is left
-    isp = [(ROT_MIN < rot[i] < ROT_MAX) and pre[i] < PRE_MAX and mov[i] >= MOVE_MIN and any(c < t[k] for c in cl_t)
-           and not any(0 <= t[k] - c < CLEAN_GUARD for c in cl_t) for i, k in enumerate(pk)]
-    for j in range(len(pk) - 2, -1, -1):    # a press-looking hump right before a swing is the start of the swing run
+    cl_t = np.array([t[k] for k in bp if z[min(n - 1, k + u)] - z[max(0, k - u)] > 0 and abs(gx[max(0, k - 25):k + 25].sum()) / FS >= nx_clean
+                     and g[max(0, k - 25):k + 25].sum() / FS >= clean_rot])
+    feat = [(ROT_MIN < rot[i] < ROT_MAX) and pre[i] < PRE_MAX and mov[i] >= MOVE_MIN and nxh[i] < nx_clean
+            and not any(0 <= t[k] - c < CLEAN_GUARD for c in cl_t) for i, k in enumerate(pk)]
+    # walk through the set in time order: a press needs the bell racked, i.e. the last clean is more recent than the last swing
+    isp = np.zeros(len(pk), dtype=bool); last_swing = -1e9
+    for i, k in enumerate(pk):
+        c = cl_t[cl_t < t[k]]
+        if feat[i] and len(c) and c[-1] > last_swing: isp[i] = True
+        elif swing_like[i]: last_swing = t[k]
+    for j in range(len(pk) - 2, -1, -1):     # a press-looking hump right before a swing is the start of the swing run
         if isp[j] and not isp[j + 1] and swing_like[j + 1] and t[pk[j + 1]] - t[pk[j]] <= SWING_GAP: isp[j] = False
-    isp = np.array(isp, dtype=bool) if len(pk) else np.array([], dtype=bool)
     swing = swing_like & ~isp
     return t[pk[swing]], cl_t, t[pk[isp]]
 

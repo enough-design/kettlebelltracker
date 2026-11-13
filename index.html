@@ -465,30 +465,35 @@ const OHP = (() => {
     const p = H.filter(h => h.press).map(h => h.k), r = rise(z, p);
     return { other: H.filter(h => !h.press).length, reps: p.map((k, i) => ({ k, t: s.t[k], rise: r[i] })) };
   }
-  // ---- Auto mode (trial): label every rep as swing, clean or press (mirrors tools/analysis/moves_v5.py) ----
-  const FLOAT_MIN = 0.29, AUTO_CLEAN = 400, CLEAN_ROT = 210, UP_WIN = 15, SWING_DEPTH = 0.18;
+  // ---- Auto mode (trial): label every rep as swing, clean or press (mirrors tools/analysis/moves_v5.py, v6) ----
+  // Cleans and swings are told apart by the AXIS of rotation: a clean spins the bell about the board's x axis (USB axis, the bell's
+  // vertical axis) by 108 to 297 deg; a swing by under 40. Same with the Nano on the front or back face; abs() covers the other hand.
+  const FLOAT_MIN = 0.29, AUTO_CLEAN = 350, CLEAN_ROT = 210, NX_CLEAN = 80, UP_WIN = 15, SWING_DEPTH = 0.18;
   function labelSet(s, tmax = Infinity) {
     const n = s.ax.length; if (n < 4 * FS) return { swings: [], cleans: [], presses: [] };
-    const z = heightTrace(s), g = s.gm, t = s.t, a = new Float64Array(n);
+    const z = heightTrace(s), g = s.gm, gx = s.gx, t = s.t, a = new Float64Array(n);
     for (let i = 0; i < n; i++) a[i] = Math.hypot(s.ax[i], s.ay[i], s.az[i]);
+    const sum = (arr, lo, hi) => { let v = 0; for (let j = Math.max(0, lo); j < Math.min(n, hi); j++) v += arr[j]; return v; };
     const H = findPeaks(z, { prominence: PROM, distance: 30 }).idx.map(k => {
-      let run = 0, best = 0, amin = Infinity, rot = 0, mv = 0;
+      let run = 0, best = 0, amin = Infinity, mv = 0;
       for (let j = Math.max(0, k - 50); j < Math.min(n, k + 38); j++) { if (a[j] < 0.55) { run++; if (run > best) best = run; } else run = 0; if (a[j] < amin) amin = a[j]; }
-      for (let j = Math.max(0, k - 38); j < Math.min(n, k + 13); j++) rot += g[j];
       for (let j = Math.max(0, k - 75); j < Math.max(1, k - 10); j++) if (g[j] > mv) mv = g[j];
-      rot /= FS; const fl = best / FS;
-      return { k, t: t[k], fl, amin, rot, pre: maxBefore(g, k), mv, swingLike: fl >= FLOAT_MIN && rot >= 100 };   // swing: a real float plus rotation
+      const rot = sum(g, k - 38, k + 13) / FS, nx = Math.abs(sum(gx, k - 38, k + 13)) / FS, fl = best / FS;
+      return { k, t: t[k], fl, amin, rot, nx, pre: maxBefore(g, k), mv, swingLike: fl >= FLOAT_MIN && rot >= 100 && nx < NX_CLEAN };
     });
-    // clean: a hard twist while the bell is rising, with plenty of rotation, away from swings
-    const cl = findPeaks(g, { height: AUTO_CLEAN, distance: 30 }).idx.filter(k => {
-      if (z[Math.min(n - 1, k + UP_WIN)] - z[Math.max(0, k - UP_WIN)] <= 0) return false;
-      let r = 0; for (let j = Math.max(0, k - 25); j < Math.min(n, k + 25); j++) r += g[j];
-      return r / FS >= CLEAN_ROT && !H.some(h => h.swingLike && Math.abs(t[k] - h.t) < 1.0);
-    });
+    // clean: a hard twist about the x axis while the bell is rising
+    const cl = findPeaks(g, { height: AUTO_CLEAN, distance: 30 }).idx.filter(k =>
+      z[Math.min(n - 1, k + UP_WIN)] - z[Math.max(0, k - UP_WIN)] > 0 && Math.abs(sum(gx, k - 25, k + 25)) / FS >= NX_CLEAN && sum(g, k - 25, k + 25) / FS >= CLEAN_ROT);
     const ct = cl.map(k => t[k]);
-    // presses are decided before swings: fast and push presses can also float briefly
-    H.forEach(h => { h.press = h.rot > ROT_MIN && h.rot < ROT_MAX && h.pre < PRE_MAX && h.mv >= MOVE_MIN && ct.some(c => c < h.t) && !ct.some(c => h.t - c >= 0 && h.t - c < CLEAN_GUARD); });
-    for (let j = H.length - 2; j >= 0; j--)
+    // walk through the set in time order: a press needs the bell racked, i.e. the last clean is more recent than the last swing
+    let lastSwing = -1e9;
+    H.forEach(h => {
+      const feat = h.rot > ROT_MIN && h.rot < ROT_MAX && h.pre < PRE_MAX && h.mv >= MOVE_MIN && h.nx < NX_CLEAN && !ct.some(c => h.t - c >= 0 && h.t - c < CLEAN_GUARD);
+      const before = ct.filter(c => c < h.t);
+      h.press = feat && before.length > 0 && before[before.length - 1] > lastSwing;
+      if (!h.press && h.swingLike) lastSwing = h.t;
+    });
+    for (let j = H.length - 2; j >= 0; j--)   // a press-looking hump right before a swing is the start of the swing run
       if (H[j].press && !H[j + 1].press && H[j + 1].swingLike && H[j + 1].t - H[j].t <= SWING_GAP) H[j].press = false;
     const P = H.filter(h => h.press), r = rise(z, P.map(h => h.k)), sh = shortFlags(r);
     return {
@@ -505,11 +510,11 @@ const OHP = (() => {
 // Samples of one set's work phase from the raw stream, in the units the detector expects
 function pressSamples(set) {
   const rows = raw.filter(r => r.set === set && r.phase === 'work');
-  const n = rows.length, s = { ax: new Float64Array(n), ay: new Float64Array(n), az: new Float64Array(n), gm: new Float64Array(n), t: new Float64Array(n), epoch: new Float64Array(n) };
+  const n = rows.length, s = { ax: new Float64Array(n), ay: new Float64Array(n), az: new Float64Array(n), gm: new Float64Array(n), gx: new Float64Array(n), t: new Float64Array(n), epoch: new Float64Array(n) };
   let tt = 0;
   rows.forEach((r, i) => {
     if (i) { let d = r.ms - rows[i - 1].ms; if (d < 0 || d > 5000) d = r.t - rows[i - 1].t; tt += d / 1000; }   // survives a board restart
-    s.ax[i] = r.ax / 1000; s.ay[i] = r.ay / 1000; s.az[i] = r.az / 1000; s.gm[i] = Math.hypot(r.gx, r.gy, r.gz); s.t[i] = tt; s.epoch[i] = r.t;
+    s.ax[i] = r.ax / 1000; s.ay[i] = r.ay / 1000; s.az[i] = r.az / 1000; s.gm[i] = Math.hypot(r.gx, r.gy, r.gz); s.gx[i] = r.gx; s.t[i] = tt; s.epoch[i] = r.t;
   });
   return s;
 }
@@ -737,7 +742,7 @@ function render() {
   else $('hint').textContent = '';
 
   $('pnote').textContent = auto
-    ? 'Auto-detect is a trial: it has only been checked against earlier recordings (7.5, 12 and 20 kg, right hand). A clean is counted when the bell is pulled up to the rack; the drop back down is not counted. Short swings (bell not going weightless) and short presses are flagged. The Nano\'s own swing count is shown next to the final counts as a cross-check. No power estimate in this mode.'
+    ? 'Auto-detect is a trial: it has only been checked against earlier recordings (7.5, 12 and 20 kg, right hand). A clean is counted when the bell is pulled up to the rack; the drop back down is not counted. Known gap: pausing in the rack between a clean and dropping the bell can be read as a press. Short swings (bell not going weightless) and short presses are flagged. The Nano\'s own swing count is shown next to the final counts as a cross-check. No power estimate in this mode.'
     : press
     ? 'Overhead press: the count comes from the raw stream (started automatically by Start set). Reps clearly shorter than the rest of the set are flagged as short (the first and last rep of a set are not judged). Please keep entering your own count in the Sets table while this is being tested. No power estimate for presses yet.'
     : kg
