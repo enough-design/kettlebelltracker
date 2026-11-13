@@ -7,7 +7,7 @@ Live page: https://enough-design.github.io/kettlebelltracker/ (Chrome on Android
 |---|---|
 | `index.html` | The dashboard page (served by GitHub Pages). Single self-contained file. |
 | `firmware/kb_tracker/kb_tracker.ino` | Nano firmware (v2). Libraries: ArduinoBLE, Arduino_BMI270_BMM150. |
-| `data/raw/` | Raw CSV exports from the page (12 kg and 20 kg swing runs, incl. a half-swing set). |
+| `data/raw/` | Raw CSV exports from the page: swing runs (12 and 20 kg, incl. a half-swing set and floor bangs) and overhead press captures (7.5, 12, 20 kg). The two 10 Nov files are early hand-held tests: `..._firmware-v1` is the first single-sample format (ms, ax..gz only, about 27 Hz, device clock jumps back 35 s at row 129) and `..._hand-swings-in-air_about-11` is the first file with phases (about 28 Hz, before batching). |
 | `data/replays/` | Rep packets as hex JSON (for page tests) and rep dumps from the firmware replay. |
 | `tools/harness2.cpp`, `tools/stubs/` | Compiles the real sketch against stub Arduino headers and replays a raw CSV through it. |
 | `tools/analysis/` | Python scripts (pandas / numpy / scipy) used for tuning. |
