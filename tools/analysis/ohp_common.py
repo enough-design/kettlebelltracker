@@ -10,6 +10,7 @@ CAPS = {
  'C': ('kb_raw_12kg-ohp-rh_2026-11-12-22-20-49.csv', {1: (8, 'F'*8), 2: (8, 'F'*8), 3: (8, 'F'*8)}),
  'D': ('kb_raw_12kg-ohp-rh_2026-11-12-22-34-47.csv', {1: (8, 'FHFHFHFH'), 2: (8, 'FFFFHHHH')}),
  'F': ('kb_raw_12kg-ohp-rh_2026-11-13-14-27-50.csv', {1: (8, 'F'*8), 2: (10, 'FFHHFFHHFF')}),  # 7.5 kg bell (file name says 12kg); set 2 count corrected from 8 to 10 by James
+ 'G': ('kb_raw_7-5kg-ohp-rh_2026-11-13-14-38-21.csv', {1: (8, 'F'*8), 2: (4, 'F'*4), 3: (10, 'FFHHFFHHFF'), 4: (8, 'F'*8)}),  # 7.5 kg; set 1: 3 extra cleans first; set 2: 4 swings + clean first; set 4 fast
  'E': ('kb_raw_12kg-ohp-rh_2026-11-12-22-57-53.csv', {1: (8, None), 2: (8, None), 3: (8, None), 4: (0, None)}),  # 4 = 8 cleans, no presses
 }
 def load(cap):
