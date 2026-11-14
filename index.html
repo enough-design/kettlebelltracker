@@ -61,6 +61,13 @@
   .warn-box { background:#3a1d1d; border:1px solid #7a2e2e; border-radius:10px; padding:10px; margin-bottom:12px; display:none; font-size:14px; }
   .hint { color:var(--mut); font-size:13px; margin:-4px 0 12px; min-height:18px; }
   .note { color:var(--mut); font-size:12px; margin:-2px 0 12px; line-height:1.45; }
+  .viz { background:#f5f4f0; border:2px solid #141414; border-radius:14px; padding:10px 12px 8px; margin-bottom:12px; color:#141414; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  .viz .vh { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+  .viz .vt { font-size:11px; font-weight:700; letter-spacing:.1em; }
+  .viz button { background:#f5f4f0; color:#141414; border:2px solid #141414; border-radius:8px; padding:5px 10px; font:700 11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; letter-spacing:.06em; text-transform:uppercase; box-shadow:0 2px 0 #141414; }
+  .viz button.on { background:#ffc21a; }
+  .viz canvas#viz { width:100%; height:210px; display:block; }
+  .viz .vn { color:#8a8780; font-size:10px; line-height:1.4; margin-top:4px; }
 </style>
 </head>
 <body>
@@ -120,6 +127,12 @@
   <button id="btnStop" disabled>Stop</button>
 </div>
 <div class="hint" id="hint"></div>
+
+<div class="viz" id="vizCard" style="display:none">
+  <div class="vh"><span class="vt">SWING TRACE</span><button id="btnTone" type="button">Tone: on</button></div>
+  <canvas id="viz"></canvas>
+  <div class="vn" id="vizNote">Bell angle from the gyro, scrolling left. A dot lands at each counted rep (hollow = short swing). Shows for the Swings movement only.</div>
+</div>
 
 <div class="grid">
   <div class="card big"><div class="lbl">Reps this set</div><div class="val" id="repsInSet">0</div><div class="unit" id="repsShort" style="color:#ffb020"></div></div>
@@ -565,7 +578,7 @@ function setPhase(p) {
   const open = phases[phases.length - 1];
   if (open && open.t1 == null) open.t1 = now;
   if (phase === 'work' && p !== 'work') { finalizePress(curSet); finalizeAuto(curSet); }   // exact counts once the set ends
-  if (p === 'work') { curSet++; setMeta[curSet] = { movement: $('move').value, kg: kgValue() || null, trueReps: null }; }
+  if (p === 'work') { curSet++; setMeta[curSet] = { movement: $('move').value, kg: kgValue() || null, trueReps: null }; if (moveOf(curSet) === 'swing') { SWINGVIZ.reset(true); TONE.ensure(); } }
   phase = p; phaseStart = now;
   if (p !== 'idle') phases.push({ phase: p, set: curSet, t0: now, t1: null });
   save(); updateButtons(); render();
@@ -581,6 +594,153 @@ function updateButtons() {
   $('btnRest').disabled = phase !== 'work';
   $('btnStop').disabled = phase === 'idle';
 }
+
+// ---------- Swing trace (visual + tone, Swings movement only) ----------
+/* SWINGVIZ-MODEL START */
+// Bell angle from the raw gyro. The sensor turns with the bell, so integrating the rotation about the swing axis gives an angle
+// that rises to the float and falls back each rep. The axis is the principal axis of recent rotation (works for either mounting
+// face); its sign is checked on every rep (the up-swing must read positive) and flipped if wrong. Drift is removed by relaxing to
+// 0 when the bell hangs still and by re-anchoring the angle at the float on every full rep (a short rep is not raised).
+// Display only: not used by any count or power figure.
+const SWINGVIZ = (() => {
+  const LO = -65, HI = 125, TOP = 88, FLOAT_DEG = 112, KEEP_MS = 7500, WIN_MS = 450, PEAK_BEFORE = 150, PEAK_AFTER = 300;
+  let u = [0, 1, 0], cov = [0, 0, 0, 0, 0, 0], th = 0, lastMs = null, hist = [], marks = [], pending = [], proj = [], still = 0;
+  function reset(keepAxis) {
+    if (!keepAxis) { u = [0, 1, 0]; cov = [0, 0, 0, 0, 0, 0]; }
+    th = 0; lastMs = null; hist = []; marks = []; pending = []; proj = []; still = 0;
+  }
+  function setAxis(v) { if (Array.isArray(v) && v.length === 3 && v.every(isFinite) && Math.hypot(...v) > 0.5) u = v.map(c => c / Math.hypot(...v)); }
+  function axis() {                       // principal axis of recent rotation: power iteration, warm-started from the last axis
+    let v = u.slice();
+    for (let k = 0; k < 2; k++) {
+      const x = cov[0] * v[0] + cov[1] * v[1] + cov[2] * v[2], y = cov[1] * v[0] + cov[3] * v[1] + cov[4] * v[2], z = cov[2] * v[0] + cov[4] * v[1] + cov[5] * v[2];
+      const n = Math.hypot(x, y, z); if (n < 1e-9) return; v = [x / n, y / n, z / n];
+    }
+    if (v[0] * u[0] + v[1] * u[1] + v[2] * u[2] < 0) v = v.map(c => -c);
+    u = v;
+  }
+  // one raw sample: ms (device clock), accel in g, gyro in deg/s, epoch (page clock) of the sample
+  function feed(ms, ax, ay, az, gx, gy, gz, epoch) {
+    const dt = lastMs == null ? 0 : ((ms - lastMs) >>> 0) / 1000; lastMs = ms;
+    if (dt > 0.5) { th = 0; proj.length = 0; return; }              // gap in the stream: start again from the hang
+    const gm = Math.hypot(gx, gy, gz);
+    for (let i = 0; i < 6; i++) cov[i] *= 0.995;
+    if (gm > 80) { cov[0] += gx * gx; cov[1] += gx * gy; cov[2] += gx * gz; cov[3] += gy * gy; cov[4] += gy * gz; cov[5] += gz * gz; axis(); }
+    const w = gx * u[0] + gy * u[1] + gz * u[2];
+    th += w * dt;
+    still = (gm < 10 && Math.abs(Math.hypot(ax, ay, az) - 1) < 0.08) ? still + dt : 0;
+    if (still > 0.4) th += (0 - th) * Math.min(1, dt * 6);
+    th = Math.max(LO - 25, Math.min(HI + 25, th));
+    proj.push([ms, w * dt]); while (proj.length && ms - proj[0][0] > WIN_MS + 100) proj.shift();
+    push(epoch, th);
+  }
+  function push(epoch, v) { hist.push({ t: epoch, th: v }); while (hist.length && epoch - hist[0].t > KEEP_MS) hist.shift(); }
+  // a counted rep (the float has just begun). Returns { flipped } so the caller can remember the axis sign.
+  function rep(epoch, short, n) {
+    let s = 0; const last = proj.length ? proj[proj.length - 1][0] : 0, before = th; let flipped = false;
+    for (const [m, d] of proj) if (last - m <= WIN_MS && last - m >= 50) s += d;      // angle swept just before the float: must be positive
+    if (s < -30) { u = u.map(c => -c); th = -th; flipped = true; }
+    if (!short) th += (TOP - th) * 0.7; else th = Math.min(th, 70);   // each full rep re-anchors the angle at the float, so drift cannot build up
+    pending.push({ t: epoch, short: !!short, n });
+    return { flipped, swept: s, before };
+  }
+  // call every frame: a rep's dot is placed at the highest point of the float, which is a moment after the rep is counted
+  function update(now) {
+    while (pending.length && now - pending[0].t >= PEAK_AFTER) {
+      const p = pending.shift(); let best = null;
+      for (const h of hist) if (h.t >= p.t - PEAK_BEFORE && h.t <= p.t + PEAK_AFTER && (!best || h.th > best.th)) best = h;
+      marks.push({ t: best ? best.t : p.t, th: best ? best.th : FLOAT_DEG, short: p.short, n: p.n });
+    }
+    while (marks.length && now - marks[0].t > KEEP_MS) marks.shift();
+  }
+  return { reset, setAxis, feed, push, rep, update, LO, HI, FLOAT_DEG,
+           get hist() { return hist; }, get marks() { return marks; }, get th() { return th; }, get u() { return u; } };
+})();
+/* SWINGVIZ-MODEL END */
+
+const VIZ_PAL = ['#ff4b12', '#ffc21a', '#4db6ff', '#2fd08a', '#ff8fb1'], VIZ_GREY = '#b9b6ae';
+const VIZ_NOTES = [261.63, 293.66, 329.63, 392, 440, 523.25, 587.33, 659.25, 783.99, 880];
+const TONE = (() => {
+  let ac = null, master = null, on = true;
+  try { on = localStorage.getItem('kb_tone') !== '0'; } catch (e) {}
+  function ensure() {
+    try {
+      if (!ac) { ac = new (window.AudioContext || window.webkitAudioContext)(); master = ac.createGain(); master.gain.value = 0.5; master.connect(ac.destination); }
+      if (ac.state === 'suspended') ac.resume().catch(() => {});
+    } catch (e) { ac = null; }
+  }
+  function blip(f, type, dur, vol, at) {
+    if (!ac || !on) return;
+    try {
+      const t = ac.currentTime + (at || 0), o = ac.createOscillator(), g = ac.createGain();
+      o.type = type; o.frequency.setValueAtTime(f, t);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.03);
+    } catch (e) {}
+  }
+  return {
+    ensure, get on() { return on; },
+    set(v) { on = v; try { localStorage.setItem('kb_tone', v ? '1' : '0'); } catch (e) {} if (v) { ensure(); blip(440, 'triangle', 0.15, 0.25); } },
+    rep(n, short) {          // a rising note per rep (pentatonic, wraps every 10); a low thud for a short swing; a chime on every 10th
+      if (short) { blip(110, 'sine', 0.2, 0.4); return; }
+      const f = VIZ_NOTES[(n - 1) % 10]; blip(f, 'triangle', 0.32, 0.34); blip(f / 2, 'sine', 0.4, 0.22);
+      if (n % 10 === 0) [523.25, 659.25, 783.99, 1046.5].forEach((q, i) => blip(q, 'triangle', 0.45, 0.26, 0.12 + i * 0.07));
+    }
+  };
+})();
+try { const a = JSON.parse(localStorage.getItem('kb_viz_axis') || 'null'); if (a) SWINGVIZ.setAxis(a); } catch (e) {}
+let vizLast = { t: -1e9, col: VIZ_PAL[0] }, vizRunning = false;
+function vizRep(r) {             // called for every counted swing rep
+  const short = isShort(r), col = short ? VIZ_GREY : VIZ_PAL[(r.repInSet - 1) % 5];
+  const res = SWINGVIZ.rep(r.t, short, r.repInSet);
+  if (res.flipped) { try { localStorage.setItem('kb_viz_axis', JSON.stringify(SWINGVIZ.u)); } catch (e) {} }
+  vizLast = { t: r.t, col };
+  TONE.rep(r.repInSet, short);
+}
+function vizDraw() {
+  const c = $('viz'), dpr = window.devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight; if (!w || !h) return;
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const now = Date.now(); SWINGVIZ.update(now);
+  const INK = '#141414', MUTE = '#8a8780', GREY = '#b9b6ae', mono = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
+  const L = w * 0.13, R = w * 0.9, yT = h * 0.17, yB = h * 0.9, WIN = 6000;
+  const X = t => R - (now - t) / WIN * (R - L), Y = a => yB - (yB - yT) * (Math.max(SWINGVIZ.LO, Math.min(SWINGVIZ.HI, a)) - SWINGVIZ.LO) / (SWINGVIZ.HI - SWINGVIZ.LO);
+  g.fillStyle = '#f5f4f0'; g.fillRect(0, 0, w, h);
+  const k = (now - vizLast.t) / 700;
+  if (k < 1) { g.globalAlpha = (1 - k) * 0.16; g.fillStyle = vizLast.col; g.fillRect(0, 0, w, h); g.globalAlpha = 1; }
+  g.fillStyle = '#d3d0c8'; for (let x = 11; x < w; x += 22) for (let y = 11; y < h; y += 22) g.fillRect(x - 1, y - 1, 2, 2);
+  g.lineWidth = 1.5; g.strokeStyle = GREY; g.setLineDash([3, 6]); g.font = '10px ' + mono; g.fillStyle = MUTE; g.textAlign = 'left';
+  [[0, 'HANG'], [SWINGVIZ.FLOAT_DEG, 'FLOAT']].forEach(([a, l]) => { g.beginPath(); g.moveTo(6, Y(a)); g.lineTo(R, Y(a)); g.stroke(); g.fillText(l, 6, Y(a) - 5); });
+  g.beginPath(); g.moveTo(R, yT - 8); g.lineTo(R, yB + 6); g.stroke(); g.setLineDash([]);
+  const H = SWINGVIZ.hist;
+  g.strokeStyle = INK; g.lineWidth = 3; g.lineJoin = 'round'; g.lineCap = 'round'; g.beginPath(); let first = true;
+  for (const p of H) { const x = X(p.t); if (x < L - 4) continue; first ? g.moveTo(x, Y(p.th)) : g.lineTo(x, Y(p.th)); first = false; }
+  g.stroke();
+  const r = Math.max(8, Math.min(12, w * 0.028));
+  for (const m of SWINGVIZ.marks) {
+    const x = X(m.t); if (x < L - r) continue; const y = Y(m.th); g.beginPath(); g.arc(x, y, r, 0, 7);
+    if (m.short) { g.fillStyle = '#f5f4f0'; g.fill(); g.strokeStyle = MUTE; g.lineWidth = 2.5; g.setLineDash([4, 3]); g.stroke(); g.setLineDash([]); }
+    else { g.fillStyle = VIZ_PAL[(m.n - 1) % 5]; g.fill(); g.strokeStyle = INK; g.lineWidth = 2.5; g.stroke(); }
+    g.fillStyle = INK; g.font = '700 11px ' + mono; g.textAlign = 'center'; g.fillText(String(m.n), x, y - r - 5);
+  }
+  const live = H.length && now - H[H.length - 1].t < 1500;
+  if (live) {
+    const y = Y(H[H.length - 1].th), n = reps.filter(q => q.counted && q.set === curSet).length;
+    g.beginPath(); g.arc(R, y, r, 0, 7); g.fillStyle = VIZ_PAL[n % 5]; g.fill(); g.strokeStyle = INK; g.lineWidth = 3; g.stroke();
+    if (k < 1) { g.save(); g.globalAlpha = 1 - k; g.strokeStyle = vizLast.col; g.lineWidth = 3; g.beginPath(); g.arc(R, y, r * (1 + k * 2.2), 0, 7); g.stroke(); g.restore(); }
+  } else {
+    g.fillStyle = MUTE; g.font = '11px ' + mono; g.textAlign = 'center';
+    g.fillText(phase === 'work' ? 'waiting for the raw stream…' : 'press Start set, then swing', (L + R) / 2, h / 2);
+  }
+}
+function vizLoop() { if (!vizRunning) return; vizDraw(); requestAnimationFrame(vizLoop); }
+function vizVisible(show) {
+  $('vizCard').style.display = show ? '' : 'none';
+  if (show && !vizRunning) { vizRunning = true; requestAnimationFrame(vizLoop); }
+  if (!show) vizRunning = false;
+}
+$('btnTone').onclick = () => { TONE.set(!TONE.on); $('btnTone').textContent = 'Tone: ' + (TONE.on ? 'on' : 'off'); $('btnTone').classList.toggle('on', TONE.on); };
+$('btnTone').textContent = 'Tone: ' + (TONE.on ? 'on' : 'off'); $('btnTone').classList.toggle('on', TONE.on);
 
 // ---------- Incoming data ----------
 // Rep packet: u8 set, u16 repInSet, u16 total, u16 peakMg, u16 intervalMs,
@@ -613,6 +773,7 @@ function addRep(d) {
   } else if (!isPress) { outside++; }
   reps.push({ t, phase, set: curSet, repInSet, counted, devSet: d.devSet, devTotal: d.devTotal, peak: d.peak, interval,
               gyroPk: d.gyroPk || 0, sweep: d.sweep || 0, gyroLaunch: d.gyroLaunch || 0 });
+  if (counted && moveOf(curSet) === 'swing') vizRep(reps[reps.length - 1]);
   save(); render();
 }
 
@@ -635,6 +796,7 @@ function onRaw(dv) {
       gx: dv.getInt16(o + 7, true) / 10, gy: dv.getInt16(o + 9, true) / 10, gz: dv.getInt16(o + 11, true) / 10
     });
     rawStats.times.push(ms >>> 0);
+    if (phase === 'work' && moveOf(curSet) === 'swing') { const q = raw[raw.length - 1]; SWINGVIZ.feed(q.ms, q.ax / 1000, q.ay / 1000, q.az / 1000, q.gx, q.gy, q.gz, q.t); }
   }
   if (rawStats.times.length > 200) rawStats.times.splice(0, rawStats.times.length - 200);
 }
@@ -752,6 +914,7 @@ function render() {
   $('radHint').textContent = 'Pivot-to-bell distance used in the power estimate. The default 0.60 m suits typical swings with 12 kg and 20 kg bells; change it only if you want to calibrate to a measured value.' +
     (isFinite(rMeas) ? ' The sensor alone suggests ' + rMeas.toFixed(2) + ' m this session, but that estimate reads high on heavier bells, so it is not used.' : '');
 
+  vizVisible(phase === 'work' ? moveOf(curSet) === 'swing' : $('move').value === 'swing');   // follows the movement chosen for the next set
   drawChart(cur);
 
   const now = Date.now();
@@ -813,13 +976,20 @@ setInterval(() => {
 $('btnSim').onclick = () => {
   if (simTimer) { clearInterval(simTimer); simTimer = null; $('btnSim').textContent = 'Simulate'; return; }
   $('btnSim').textContent = 'Stop simulation';
-  let n = reps.length ? reps[reps.length - 1].devTotal : 0, k = 0;
+  TONE.ensure();
+  let n = reps.length ? reps[reps.length - 1].devTotal : 0, k = 0, p = 0.2, amp = 1;
   const j = s => (Math.random() - 0.5) * 2 * s;
-  simTimer = setInterval(() => {
-    n++; k++;
-    addRep({ devSet: 1, devTotal: n, peak: 2.5 + j(0.25), devInterval: 1500 + (j(40) | 0),
-             gyroPk: 295 + j(20), sweep: 80 + j(6), gyroLaunch: 210 + j(25) });
-  }, 1700);
+  simTimer = setInterval(() => {   // 50 Hz stand-in for the sensor: a bell angle for the trace, and a rep packet at each float (every 7th is short)
+    const prev = p; p += 0.02 / 1.6;
+    if (p >= 1) { p -= 1; amp = (k % 7 === 6) ? 0.8 : 1; }
+    const v = (1 - Math.cos(2 * Math.PI * p)) / 2, ww = 1 - Math.pow(1 - v, 1.35);
+    if (phase === 'work' && moveOf(curSet) === 'swing') SWINGVIZ.push(Date.now(), -55 + 170 * ww * amp + j(1.5));
+    if (prev < 0.45 && p >= 0.45) {
+      n++; k++;
+      addRep({ devSet: 1, devTotal: n, peak: 2.5 + j(0.25), devInterval: 1600 + (j(40) | 0),
+               gyroPk: 295 + j(20), sweep: 80 + j(6), gyroLaunch: amp < 1 ? 110 + j(10) : 210 + j(25) });
+    }
+  }, 20);
 };
 
 window.addEventListener('resize', render);
