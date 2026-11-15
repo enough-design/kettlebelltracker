@@ -40,6 +40,8 @@ T = {  # file: {set: (swings, presses, cleans)}
  'kb_raw_12kg-cleans-test_2026-11-15-14-46-32.csv': {1: (0, 0, 5), 2: (0, 0, 5), 3: (0, 12, 3), 4: (0, 4, 1), 5: (0, 4, 4)},
  # 15 Nov 16:05 cleans, Cleans mode: sets 1-2 right hand, 3-5 LEFT hand (first left-hand data). Counts from James.
  'kb_raw_12kg-cleans-RHS-and-LHS-test_2026-11-15-16-05-41.csv': {1: (0, 0, 10), 2: (0, 0, 10), 3: (0, 0, 10), 4: (0, 0, 10), 5: (0, 0, 5)},
+ # 15 Nov 16:27 cleans: set 1 right, 2-3 left, 4 right then left after 3 reps (hand switch without putting the bell down).
+ 'kb_raw_12kg-cleans-test_2026-11-15-16-27-28.csv': {1: (0, 0, 5), 2: (0, 0, 5), 3: (0, 0, 5), 4: (0, 0, 6)},
  'kb_raw_12kg-mix_2026-11-13-21-14-44.csv': {1: (10, 5, 6), 2: (5, None, 5)},
  'kb_raw_12kg-swings_2026-11-13-16-53-01.csv': {1: (8, None, 5), 2: (8, 5, 5), 3: (8, 5, 1), 4: (8, 5, 1), 5: (None, None, None)},
 }
