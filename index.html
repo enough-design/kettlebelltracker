@@ -597,8 +597,35 @@ function finalizeAuto(set) {
   setMeta[set].auto = { swings: L.swings.map(r => ({ t: ep(r), depth: r.depth, short: r.short })), cleans: L.cleans.map(r => ({ t: ep(r) })),
                         presses: L.presses.map(r => ({ t: ep(r), rise: r.rise, short: r.short })) };
 }
+// ---- Cleans mode: real-time clean count (15 Nov) ----
+// A clean is counted 0.6 s after its gyro burst, as the bell lands in the rack, without the height trace:
+//   burst >= 350 dps (largest within +/- 0.3 s), >= 80 deg net twist about x and >= 210 deg total within +/- 0.5 s (as the offline labeller),
+//   and the bell's handle axis (board x, |ax| of the unit acceleration) is near vertical before (hanging, mean over 1.0-0.5 s before > 0.80)
+//   and tilted after (in the rack, mean over 0.3-0.6 s after < 0.885). A drop is the reverse (racked before, hanging after).
+// On 269 clean-like bursts in every labelled capture this tilt test was right on all of them (cleans 0.31-0.87 after, drops 0.90-1.00).
+// Cleans less than 1 s after a counted clean are ignored. The exact offline count replaces the live one at Rest or Stop.
+const CF = { PK: 350, NX: 80, ROT: 210, AFTER: 0.885, BEFORE: 0.80, SEP: 1.0 };
+let cleanFast = { set: 0, base: 0, i: 0, n: 0, lastK: -1e9, times: [] };
+function updateCleanFast() {
+  if (phase !== 'work' || moveOf(curSet) !== 'clean') return false;
+  if (cleanFast.set !== curSet) { let b = raw.length; while (b > 0 && raw[b - 1].set === curSet && raw[b - 1].phase === 'work') b--; cleanFast = { set: curSet, base: b, i: b + 50, n: 0, lastK: -1e9, times: [] }; }
+  const N = raw.length, g = k => Math.hypot(raw[k].gx, raw[k].gy, raw[k].gz), n0 = cleanFast.n;
+  const tilt = (i, j) => { let v = 0; for (let k = i; k < j; k++) { const q = raw[k]; v += Math.abs(q.ax) / (Math.hypot(q.ax, q.ay, q.az) || 1); } return v / (j - i); };
+  for (let k = Math.max(cleanFast.i, cleanFast.base + 50); k <= N - 31; k++) {
+    const gk = g(k); if (gk < CF.PK) continue;
+    let top = true; for (let j = k - 15; j <= k + 15 && top; j++) if (j !== k && j >= cleanFast.base && (j < k ? g(j) > gk : g(j) >= gk)) top = false;
+    if (!top || (k - cleanFast.lastK) < CF.SEP * 50) continue;
+    let nx = 0, rot = 0; for (let j = Math.max(cleanFast.base, k - 25); j < Math.min(N, k + 25); j++) { nx += raw[j].gx; rot += g(j); }
+    if (Math.abs(nx) / 50 < CF.NX || rot / 50 < CF.ROT) continue;
+    if (tilt(k + 15, k + 30) >= CF.AFTER || tilt(k - 50, k - 25) <= CF.BEFORE) continue;
+    cleanFast.n++; cleanFast.lastK = k; cleanFast.times.push(raw[k].t);
+  }
+  cleanFast.i = Math.max(cleanFast.i, N - 30);
+  return cleanFast.n !== n0;
+}
 // counts for an auto set: final if the set has ended, live while it runs
 const autoCounts = s => { const m = setMeta[s]; if (m && m.auto) return { swings: m.auto.swings.length, cleans: m.auto.cleans.length, presses: m.auto.presses.length, final: true };
+  if (s === cleanFast.set && moveOf(s) === 'clean') return { ...autoLive.n, cleans: cleanFast.n, final: false };
   return s === autoLive.set ? { ...autoLive.n, final: false } : null; };
 const autoShort = s => { const m = setMeta[s]; return m && m.auto ? m.auto.swings.filter(r => r.short).length : 0; };   // short swings only
 const nanoSwings = s => reps.filter(r => r.set === s && r.phase === 'work').length;   // the Nano's own swing count, as a cross-check
@@ -611,7 +638,7 @@ function setPhase(p) {
   const open = phases[phases.length - 1];
   if (open && open.t1 == null) open.t1 = now;
   if (phase === 'work' && p !== 'work') { finalizePress(curSet); finalizeAuto(curSet); }   // exact counts once the set ends
-  if (p === 'work') { curSet++; setMeta[curSet] = { movement: $('move').value, kg: kgValue() || null, trueReps: null }; if (moveOf(curSet) === 'swing') { SWINGVIZ.reset(true); TONE.ensure(); } }
+  if (p === 'work') { curSet++; cleanFast.set = 0; setMeta[curSet] = { movement: $('move').value, kg: kgValue() || null, trueReps: null }; if (moveOf(curSet) === 'swing') { SWINGVIZ.reset(true); TONE.ensure(); } }
   phase = p; phaseStart = now;
   if (p !== 'idle') phases.push({ phase: p, set: curSet, t0: now, t1: null });
   save(); updateButtons(); render();
@@ -832,6 +859,7 @@ function onRaw(dv) {
     if (phase === 'work' && moveOf(curSet) === 'swing') { const q = raw[raw.length - 1]; SWINGVIZ.feed(q.ms, q.ax / 1000, q.ay / 1000, q.az / 1000, q.gx, q.gy, q.gz, q.t); }
   }
   if (rawStats.times.length > 200) rawStats.times.splice(0, rawStats.times.length - 200);
+  if (updateCleanFast()) render();
 }
 
 // ---------- Export ----------
@@ -908,7 +936,7 @@ function render() {
   $('repsInSet').style.fontSize = auto ? '44px' : '';
   $('move').disabled = phase === 'work';
   $('moveHint').textContent = cleanM
-    ? 'Cleans: each clean counted from the raw stream, a few seconds behind you; the exact count appears when you press Rest or Stop. Nano on the back face of the bell.'
+    ? 'Cleans: each clean counted as the bell lands in the rack; the count is re-checked when you press Rest or Stop. Nano on the back face of the bell.'
     : auto
     ? 'Auto-detect (trial): the page labels each rep as a swing, a clean or a press from the raw stream, a few seconds behind you. Exact counts appear when you press Rest or Stop. Please note what you actually did in the set notes so the labels can be checked.'
     : press
