@@ -107,6 +107,7 @@
     <select id="move">
       <option value="swing">Kettlebell swings</option>
       <option value="press">Overhead press</option>
+      <option value="clean">Cleans</option>
       <option value="auto">Auto-detect (trial)</option>
     </select>
     <div class="sub" id="moveHint"></div>
@@ -211,10 +212,12 @@ function weightChanged() {
 }
 const kgForSet = s => { const m = setMeta[s]; return m && m.kg != null ? m.kg : kgValue(); };
 const moveOf = s => (setMeta[s] && setMeta[s].movement) || 'swing';
-const MOVE_LABEL = { swing: 'Swing', press: 'Press', auto: 'Auto' };
+const MOVE_LABEL = { swing: 'Swing', press: 'Press', clean: 'Clean', auto: 'Auto' };
+// Cleans mode runs the Auto-detect labeller and shows only the cleans (cleans 81/81 on all labelled sets, 15 Nov)
+const autoLike = m => m === 'auto' || m === 'clean';
 const curMove = () => (phase !== 'idle' && setMeta[curSet]) ? moveOf(curSet) : $('move').value;
 ['kb_move', 'kb_name', 'kb_desc'].forEach(k => { try { const v = localStorage.getItem(k); if (v != null) $({ kb_move: 'move', kb_name: 'sname', kb_desc: 'sdesc' }[k]).value = v; } catch (e) {} });
-if (!['swing', 'press', 'auto'].includes($('move').value)) $('move').value = 'swing';
+if (!['swing', 'press', 'clean', 'auto'].includes($('move').value)) $('move').value = 'swing';
 [['move', 'kb_move'], ['sname', 'kb_name'], ['sdesc', 'kb_desc']].forEach(([id, key]) =>
   $(id).addEventListener(id === 'move' ? 'change' : 'input', () => { try { localStorage.setItem(key, $(id).value); } catch (e) {} render(); }));
 const slug = t => t.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50);
@@ -580,7 +583,7 @@ function finalizePress(set) {
 const AUTO_KEYS = ['swings', 'cleans', 'presses'];
 let autoLive = { set: 0, hist: [], n: { swings: 0, cleans: 0, presses: 0 } };
 function updateAutoLive() {
-  if (phase !== 'work' || moveOf(curSet) !== 'auto') return;
+  if (phase !== 'work' || !autoLike(moveOf(curSet))) return;
   if (autoLive.set !== curSet) autoLive = { set: curSet, hist: [], n: { swings: 0, cleans: 0, presses: 0 } };
   const s = pressSamples(curSet), L = OHP.labelSet(s, s.t.length ? s.t[s.t.length - 1] - OHP.LIVE_LAG : 0);
   autoLive.hist.push({ swings: L.swings.length, cleans: L.cleans.length, presses: L.presses.length });
@@ -588,7 +591,7 @@ function updateAutoLive() {
   if (autoLive.hist.length === LIVE_HOLD) AUTO_KEYS.forEach(k => { autoLive.n[k] = Math.max(autoLive.n[k], Math.min(...autoLive.hist.map(h => h[k]))); });
 }
 function finalizeAuto(set) {
-  if (!set || moveOf(set) !== 'auto') return;
+  if (!set || !autoLike(moveOf(set))) return;
   const s = pressSamples(set); if (!s.t.length) return;
   const L = OHP.labelSet(s), ep = r => s.epoch[r.k];
   setMeta[set].auto = { swings: L.swings.map(r => ({ t: ep(r), depth: r.depth, short: r.short })), cleans: L.cleans.map(r => ({ t: ep(r) })),
@@ -865,8 +868,8 @@ $('btnCsv').onclick = () => {
   Object.keys(setMeta).map(Number).sort((a, b) => a - b).forEach(s => {
     const m = setMeta[s];
     const ar = [];
-    if (m.auto) AUTO_KEYS.forEach(key => m.auto[key].forEach((r, i) => ar.push({ time: new Date(r.t).toISOString(), phase: 'work', set: s, rep_in_set: i + 1, counted: 1, bell_kg: kgForSet(s) || '',
-      movement: key.slice(0, -1).replace('presse', 'press'), set_mode: 'auto', press_height_cm: r.rise != null ? (r.rise * 100).toFixed(0) : '', float_depth_g: r.depth != null ? r.depth.toFixed(2) : '', short_rep: r.short == null ? '' : (r.short ? 1 : 0),
+    if (m.auto) AUTO_KEYS.filter(key => moveOf(s) !== 'clean' || key === 'cleans').forEach(key => m.auto[key].forEach((r, i) => ar.push({ time: new Date(r.t).toISOString(), phase: 'work', set: s, rep_in_set: i + 1, counted: 1, bell_kg: kgForSet(s) || '',
+      movement: key.slice(0, -1).replace('presse', 'press'), set_mode: moveOf(s), press_height_cm: r.rise != null ? (r.rise * 100).toFixed(0) : '', float_depth_g: r.depth != null ? r.depth.toFixed(2) : '', short_rep: r.short == null ? '' : (r.short ? 1 : 0),
       your_count: m.trueReps != null ? m.trueReps : '', set_description: setDesc(s), ...capCols() })));
     ar.sort((x, y) => x.time < y.time ? -1 : 1).forEach(r => rows.push(r));   // in the order they happened
     if (!m.press) return;
@@ -890,8 +893,8 @@ const mmss = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return Math.f
 
 function render() {
   const kg = kgValue(), r0 = radiusSetting(), rMeas = sessionRadius();
-  const press = curMove() === 'press', auto = curMove() === 'auto';
-  const ac = auto ? autoCounts(curSet) : null;
+  const press = curMove() === 'press', auto = curMove() === 'auto', cleanM = curMove() === 'clean';
+  const ac = (auto || cleanM) ? autoCounts(curSet) : null;
   const counted = reps.filter(r => r.counted);
   const cur = counted.filter(r => r.set === curSet);
   const last = cur[cur.length - 1];
@@ -901,21 +904,25 @@ function render() {
   const nShort = cur.filter(isShort).length;
   const pc = press ? pressCount(curSet) : null, ps = press ? pressShort(curSet) : 0;
   const pressFinal = press && setMeta[curSet] && setMeta[curSet].press;
-  $('repsInSet').textContent = auto ? (ac ? `${ac.swings} / ${ac.cleans} / ${ac.presses}` : '– / – / –') : press ? (pc == null ? '–' : pc) : cur.length;
+  $('repsInSet').textContent = cleanM ? (ac ? ac.cleans : '–') : auto ? (ac ? `${ac.swings} / ${ac.cleans} / ${ac.presses}` : '– / – / –') : press ? (pc == null ? '–' : pc) : cur.length;
   $('repsInSet').style.fontSize = auto ? '44px' : '';
   $('move').disabled = phase === 'work';
-  $('moveHint').textContent = auto
+  $('moveHint').textContent = cleanM
+    ? 'Cleans: each clean counted from the raw stream, a few seconds behind you; the exact count appears when you press Rest or Stop. Nano on the back face of the bell.'
+    : auto
     ? 'Auto-detect (trial): the page labels each rep as a swing, a clean or a press from the raw stream, a few seconds behind you. Exact counts appear when you press Rest or Stop. Please note what you actually did in the set notes so the labels can be checked.'
     : press
     ? 'Press: reps counted from the bell\'s up-and-down movement; each rep appears about 3 seconds after you finish it. Start each set with a clean. Cleans and swings in the same set are recognised and not counted as presses. The exact count is shown when you press Rest or Stop.'
     : 'Swings: reps counted live and flagged if short.';
-  $('repsShort').textContent = auto
+  $('repsShort').textContent = cleanM
+    ? (ac ? (ac.final ? 'final count' : 'live' + (rawRate() && rawRate() < 40 ? ' - raw stream below 40 Hz, count may be off' : '')) : '')
+    : auto
     ? 'swings / cleans / presses' + (ac ? (ac.final ? ' · final' + (autoShort(curSet) ? ' · ' + autoShort(curSet) + ' short' : '') + ' · Nano counted ' + nanoSwings(curSet) + ' swings' : ' · live' + (rawRate() && rawRate() < 40 ? ' - raw stream below 40 Hz, counts may be off' : '')) : '')
     : press
     ? (phase === 'work' && moveOf(curSet) === 'press' ? 'live count' + (rawRate() && rawRate() < 40 ? ' - raw stream below 40 Hz, count may be off' : '') : (pressFinal ? (ps ? ps + ' short (not full presses)' : 'final count') : ''))
     : (nShort ? nShort + ' short (not full swings)' : '');
   $('setNo').textContent = curSet || '–';
-  $('total').textContent = counted.length + Object.keys(setMeta).reduce((a, s) => a + (setMeta[s].press ? setMeta[s].press.reps.length : 0) + (setMeta[s].auto ? AUTO_KEYS.reduce((x, k) => x + setMeta[s].auto[k].length, 0) : 0), 0);
+  $('total').textContent = counted.length + Object.keys(setMeta).reduce((a, s) => a + (setMeta[s].press ? setMeta[s].press.reps.length : 0) + (setMeta[s].auto ? (moveOf(+s) === 'clean' ? setMeta[s].auto.cleans.length : AUTO_KEYS.reduce((x, k) => x + setMeta[s].auto[k].length, 0)) : 0), 0);
   $('last').textContent = last && last.interval ? fmt(last.interval / 1000) : '–';
   $('avg').textContent = fmt(mean(cur.filter(r => r.interval).map(r => r.interval / 1000)));
   $('peak').textContent = last ? fmt(last.peak) : '–';
@@ -930,7 +937,7 @@ function render() {
   $('phase').className = 'phase-' + phase;
 
   if (phase === 'idle' && outside > 0) $('hint').textContent = outside + ' rep(s) arrived outside a set and were not counted - press Start set first.';
-  else if (phase === 'idle') $('hint').textContent = 'Press Start set, ' + (auto ? 'do your reps' : press ? 'press' : 'swing') + ', then Rest or Stop.';
+  else if (phase === 'idle') $('hint').textContent = 'Press Start set, ' + (auto ? 'do your reps' : cleanM ? 'clean' : press ? 'press' : 'swing') + ', then Rest or Stop.';
   else $('hint').textContent = '';
 
   $('pnote').textContent = auto
@@ -959,6 +966,8 @@ function render() {
     const dur = type => phases.filter(p => p.phase === type && p.set === s).reduce((x, p) => x + ((p.t1 ?? now) - p.t0), 0);
     const sh = a.filter(isShort).length;
     const mine = `<td><input class="mine" type="number" inputmode="numeric" min="0" max="999" data-set="${s}" value="${setMeta[s] && setMeta[s].trueReps != null ? setMeta[s].trueReps : ''}" aria-label="Reps you actually did in set ${s}"></td><td><input class="note" type="text" maxlength="120" placeholder="e.g. last 3 half reps" data-set="${s}" value="${(setMeta[s] && setMeta[s].desc || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}" aria-label="Notes for set ${s}"></td>`;
+    if (moveOf(s) === 'clean') { const c = autoCounts(s);
+      return `<tr><td>${s}</td><td>${MOVE_LABEL.clean} ${kgForSet(s) || ''}${kgForSet(s) ? ' kg' : ''}</td><td>${c ? c.cleans : '–'}</td><td>–</td><td>–</td><td>–</td><td>–</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td>${mine}</tr>`; }
     if (moveOf(s) === 'auto') { const c = autoCounts(s), sh2 = autoShort(s);
       return `<tr><td>${s}</td><td>${MOVE_LABEL.auto} ${kgForSet(s) || ''}${kgForSet(s) ? ' kg' : ''}</td><td style="white-space:nowrap">${c ? `${c.swings} sw · ${c.cleans} cl · ${c.presses} pr` : '–'}${sh2 ? ` <span style="color:#ffb020">(${sh2} short)</span>` : ''}</td><td>–</td><td>–</td><td>–</td><td>–</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td>${mine}</tr>`; }
     if (isPressSet(s)) { const pcs = pressCount(s), pss = pressShort(s);
@@ -997,7 +1006,7 @@ function drawChart(cur) {
 setInterval(() => {
   $('phaseTime').textContent = phase === 'idle' ? '–' : mmss(Date.now() - phaseStart);
   if (phase === 'work' && moveOf(curSet) === 'press') { updatePressLive(); render(); }
-  if (phase === 'work' && moveOf(curSet) === 'auto') { updateAutoLive(); render(); }
+  if (phase === 'work' && autoLike(moveOf(curSet))) { updateAutoLive(); render(); }
   if (phase === 'rest') render(); // keeps the rest column ticking
   updateRawInfo();
 }, 500);
