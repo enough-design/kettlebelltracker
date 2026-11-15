@@ -38,6 +38,8 @@ T = {  # file: {set: (swings, presses, cleans)}
  # 15 Nov 14:46 clean/rack tests, Nano on the back: slow cleans with 2-3 s and 5 s+ rack holds; clean, settle, 4 presses x3;
  # clean and press straight out of it; alternating clean / press. All correct on the page (James).
  'kb_raw_12kg-cleans-test_2026-11-15-14-46-32.csv': {1: (0, 0, 5), 2: (0, 0, 5), 3: (0, 12, 3), 4: (0, 4, 1), 5: (0, 4, 4)},
+ # 15 Nov 16:05 cleans, Cleans mode: sets 1-2 right hand, 3-5 LEFT hand (first left-hand data). Counts from James.
+ 'kb_raw_12kg-cleans-RHS-and-LHS-test_2026-11-15-16-05-41.csv': {1: (0, 0, 10), 2: (0, 0, 10), 3: (0, 0, 10), 4: (0, 0, 10), 5: (0, 0, 5)},
  'kb_raw_12kg-mix_2026-11-13-21-14-44.csv': {1: (10, 5, 6), 2: (5, None, 5)},
  'kb_raw_12kg-swings_2026-11-13-16-53-01.csv': {1: (8, None, 5), 2: (8, 5, 5), 3: (8, 5, 1), 4: (8, 5, 1), 5: (None, None, None)},
 }

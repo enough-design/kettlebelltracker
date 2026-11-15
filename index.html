@@ -600,15 +600,16 @@ function finalizeAuto(set) {
 // ---- Cleans mode: real-time clean count (15 Nov) ----
 // A clean is counted 0.6 s after its gyro burst, as the bell lands in the rack, without the height trace:
 //   burst >= 350 dps (largest within +/- 0.3 s), >= 80 deg net twist about x and >= 210 deg total within +/- 0.5 s (as the offline labeller),
-//   and the bell's handle axis (board x, |ax| of the unit acceleration) is near vertical before (hanging, mean over 1.0-0.5 s before > 0.80)
-//   and tilted after (in the rack, mean over 0.3-0.6 s after < 0.885). A drop is the reverse (racked before, hanging after).
-// On 269 clean-like bursts in every labelled capture this tilt test was right on all of them (cleans 0.31-0.87 after, drops 0.90-1.00).
+//   and the bell's handle axis (board x, |ax| of the unit acceleration) tilted after the burst (in the rack, mean over 0.3-0.6 s after < 0.885);
+//   after a drop the bell hangs (0.90-1.00). Right on all clean-like bursts in every labelled capture, both hands (cleans 0.31-0.87 after).
+//   The first clean of a set fixes the twist direction (it depends on hand and face); later candidates twisting the other way are
+//   drops or a put-down (two put-downs counted live without this, 15 Nov). A 'hanging before' check was dropped (15 Nov 16:05): left-hand cleans straight out of a drop start tilted (0.73-0.81).
 // Cleans less than 1 s after a counted clean are ignored. The exact offline count replaces the live one at Rest or Stop.
-const CF = { PK: 350, NX: 80, ROT: 210, AFTER: 0.885, BEFORE: 0.80, SEP: 1.0 };
-let cleanFast = { set: 0, base: 0, i: 0, n: 0, lastK: -1e9, times: [] };
+const CF = { PK: 350, NX: 80, ROT: 210, AFTER: 0.885, SEP: 1.0 };
+let cleanFast = { set: 0, base: 0, i: 0, n: 0, lastK: -1e9, times: [], dir: 0 };
 function updateCleanFast() {
   if (phase !== 'work' || moveOf(curSet) !== 'clean') return false;
-  if (cleanFast.set !== curSet) { let b = raw.length; while (b > 0 && raw[b - 1].set === curSet && raw[b - 1].phase === 'work') b--; cleanFast = { set: curSet, base: b, i: b + 50, n: 0, lastK: -1e9, times: [] }; }
+  if (cleanFast.set !== curSet) { let b = raw.length; while (b > 0 && raw[b - 1].set === curSet && raw[b - 1].phase === 'work') b--; cleanFast = { set: curSet, base: b, i: b + 50, n: 0, lastK: -1e9, times: [], dir: 0 }; }
   const N = raw.length, g = k => Math.hypot(raw[k].gx, raw[k].gy, raw[k].gz), n0 = cleanFast.n;
   const tilt = (i, j) => { let v = 0; for (let k = i; k < j; k++) { const q = raw[k]; v += Math.abs(q.ax) / (Math.hypot(q.ax, q.ay, q.az) || 1); } return v / (j - i); };
   for (let k = Math.max(cleanFast.i, cleanFast.base + 50); k <= N - 31; k++) {
@@ -617,7 +618,9 @@ function updateCleanFast() {
     if (!top || (k - cleanFast.lastK) < CF.SEP * 50) continue;
     let nx = 0, rot = 0; for (let j = Math.max(cleanFast.base, k - 25); j < Math.min(N, k + 25); j++) { nx += raw[j].gx; rot += g(j); }
     if (Math.abs(nx) / 50 < CF.NX || rot / 50 < CF.ROT) continue;
-    if (tilt(k + 15, k + 30) >= CF.AFTER || tilt(k - 50, k - 25) <= CF.BEFORE) continue;
+    if (tilt(k + 15, k + 30) >= CF.AFTER) continue;
+    if (cleanFast.dir && Math.sign(nx) !== cleanFast.dir) continue;   // twists the other way to the set's first clean: a drop or put-down
+    if (!cleanFast.dir) cleanFast.dir = Math.sign(nx);
     cleanFast.n++; cleanFast.lastK = k; cleanFast.times.push(raw[k].t);
   }
   cleanFast.i = Math.max(cleanFast.i, N - 30);

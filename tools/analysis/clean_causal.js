@@ -5,7 +5,8 @@ const T = JSON.parse(fs.readFileSync('tools/tests/truth_all.json', 'utf8'));
 function parse(f){const [h,...L]=fs.readFileSync('data/raw/'+f,'utf8').trim().split('\n');const H=h.split(',');const ix=n=>H.indexOf(n);
 return L.map(l=>l.split(',')).map(c=>({t:+c[ix('t_epoch_ms')],ms:+c[ix('ms')],phase:c[ix('phase')],set:+c[ix('set')],ax:+c[ix('ax')],ay:+c[ix('ay')],az:+c[ix('az')],gx:+c[ix('gx')],gy:+c[ix('gy')],gz:+c[ix('gz')]}));}
 (async()=>{const b=await chromium.launch();const p=await b.newPage();await p.goto('file://'+process.cwd()+'/index.html');const out=[];
-for(const [f,S] of Object.entries(T)){ if(f.startsWith('kb_raw_2026-11-11-13-05-20'))continue; const rows=parse(f);
+const ONLY=process.argv[2]; const TT=ONLY?{[ONLY]:{1:0,2:0,3:0,4:0,5:0,6:0,7:0,8:0,9:0}}:T;
+for(const [f,S] of Object.entries(TT)){ if(f.startsWith('kb_raw_2026-11-11-13-05-20'))continue; const rows=parse(f);
  for(const s of Object.keys(S)){ const work=rows.filter(r=>r.set==+s&&r.phase=='work'); if(!work.length)continue;
   const r=await p.evaluate(({work})=>{raw=work.map(q=>({...q,phase:'work',set:1}));const S=pressSamples(1),L=OHP.labelSet(S),n=S.t.length,FS=50;
    const cl=L.cleans.map(x=>x.k), g=S.gm, gx=S.gx, sum=(a,i,j)=>{let v=0;for(let k=Math.max(0,i);k<Math.min(n,j);k++)v+=a[k];return v;};
@@ -22,7 +23,8 @@ for(const [f,S] of Object.entries(T)){ if(f.startsWith('kb_raw_2026-11-11-13-05-
      res.push(f);}
    return res;},{work});
   r.forEach(x=>out.push({f:f.slice(7,40),s,...x}));}}
-fs.writeFileSync('/tmp/clean_feat.json',JSON.stringify(out));
+if(ONLY){out.forEach(x=>console.log(x.s,x.clean?'CLEAN':'other',x.k,'pk',Math.round(x.pk),'nx',x.nx,'rot',x.rot,'before',x.axb,'after',x.w6[1],'w4',x.w4[1],'w8',x.w8[1]));}
+fs.writeFileSync(ONLY?'/tmp/clean_feat_one.json':'/tmp/clean_feat.json',JSON.stringify(out));
 const C=out.filter(x=>x.clean),D=out.filter(x=>!x.clean);console.log('cleans',C.length,'others',D.length);
 const rng=(A,fn)=>{const v=A.map(fn).sort((a,b)=>a-b);return v.length?`${v[0]}..${v[v.length-1]} (10%:${v[Math.floor(v.length*.1)]} 90%:${v[Math.floor(v.length*.9)]})`:'-';};
 for(const w of ['w4','w6','w8']) for(const [i,nm] of [[0,'gyro max'],[1,'|ax|'],[2,'| |a|-1 |']]) console.log(w,nm.padEnd(10),'clean',rng(C,x=>x[w][i]).padEnd(36),'other',rng(D,x=>x[w][i]));
