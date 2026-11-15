@@ -229,13 +229,29 @@ const DEFAULT_RADIUS = 0.60;   // metres
 // The radius is a SETTING (default 0.60 m, which fits the 12 kg test data). The sensor can also
 // suggest a radius, r = (a_peak - g) / w^2, but that reading is biased upwards on heavier bells
 // (the hip drive adds to the peak acceleration), so it is shown only as a diagnostic.
-// A "short" swing never reached the float point: launch gyro well below any full swing in the test
-// data (short 72-122 dps, full 164-345 dps, 12 kg and 20 kg). Short swings are still counted but get
-// no power/energy figure. Reps with no launch reading (gyroLaunch 0) are treated as full.
-// NB: the launch gyro must be read at the START of the float (firmware v4+). Firmware v3 read it 150 ms in, when the bell had slowed,
-// so every swing looked short (seen 15 Nov, 12 kg full swings reading 6-48 dps).
-const SHORT_DPS = 150;
-const isShort = r => r.gyroLaunch > 0 && r.gyroLaunch < SHORT_DPS;
+// A "short" swing never reached the float point; it is still counted but gets no power/energy figure.
+// Rule (calibrated 15 Nov on 194 labelled reps, Nano on front and back, 12 and 20 kg, all classified correctly):
+//   short if the peak acceleration of the rep is under SHORT_PEAK (known the moment the rep registers, so tone and trace react live)
+//   or, once the float has ended (about 0.7 s later), the float was shallow: lowest |a| above SHORT_DEPTH.
+// The old rule (launch gyro under 150 dps) read 20 of those 194 wrong: it depends on the mounting face (a full swing with the Nano
+// on the back reads 60-280 dps) and, in firmware v3, was sampled 150 ms into the float. Launch gyro is still used for the energy figure.
+// Peak 0 (no reading) is treated as full.
+const SHORT_PEAK = 2.1, SHORT_DEPTH = 0.26;
+function repDepth(r) {               // lowest |a| in the float around a rep, from the raw stream; undefined until the float is over
+  if (r.depth !== undefined) return r.depth;
+  const n = raw.length; if (!n || raw[n - 1].t < r.t + 700) return undefined;
+  const t0 = r.t - 450, t1 = r.t + 700; let lo = 0, hi = n;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (raw[m].t < t0) lo = m + 1; else hi = m; }
+  let best = Infinity, k = 0;
+  for (let i = lo; i < n && raw[i].t <= t1; i++) { const q = raw[i], a = Math.hypot(q.ax, q.ay, q.az) / 1000; if (a < best) best = a; k++; }
+  r.depth = k >= 10 ? best : null;     // null: no raw stream for this rep, the peak rule alone applies
+  return r.depth;
+}
+const isShort = r => {
+  if (!(r.peak > 0)) return false;
+  if (r.peak < SHORT_PEAK) return true;
+  const d = repDepth(r); return d != null && d > SHORT_DEPTH;
+};
 function repRadius(r) {
   if (!r.gyroPk || !r.sweep || !r.peak) return null;
   const w = r.gyroPk * Math.PI / 180;
@@ -826,7 +842,7 @@ $('btnCsv').onclick = () => {
     const m = moveOf(r.set) === 'swing' ? calcMetrics(r, kg, r0) : null;
     return {
       time: new Date(r.t).toISOString(), phase: r.phase, set: r.set, rep_in_set: r.repInSet,
-      counted: r.counted ? 1 : 0, full_swing: r.gyroLaunch > 0 ? (isShort(r) ? 0 : 1) : '', device_set: r.devSet, device_total: r.devTotal,
+      counted: r.counted ? 1 : 0, full_swing: r.peak > 0 ? (isShort(r) ? 0 : 1) : '', device_set: r.devSet, device_total: r.devTotal,
       peak_g: r.peak.toFixed(3), interval_ms: r.interval,
       gyro_peak_dps: r.gyroPk, sweep_deg: r.sweep, gyro_launch_dps: r.gyroLaunch,
       bell_kg: kg || '', radius_measured_m: f(m && m.own, 2), radius_used_m: f(m && m.rad, 2), speed_ms: f(m && m.vPk, 2),
