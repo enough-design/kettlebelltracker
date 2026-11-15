@@ -130,7 +130,7 @@
 <div class="hint" id="hint"></div>
 
 <div class="viz" id="vizCard" style="display:none">
-  <div class="vh"><span class="vt">SWING TRACE</span><button id="btnTone" type="button">Tone: on</button></div>
+  <div class="vh"><span class="vt" id="vizTitle">SWING TRACE</span><button id="btnTone" type="button">Tone: on</button></div>
   <canvas id="viz"></canvas>
   <div class="vn" id="vizNote">Bell angle from the gyro, scrolling left. A dot lands at each counted rep (hollow = short swing). Shows for the Swings movement only.</div>
 </div>
@@ -645,7 +645,7 @@ function setPhase(p) {
   const open = phases[phases.length - 1];
   if (open && open.t1 == null) open.t1 = now;
   if (phase === 'work' && p !== 'work') { finalizePress(curSet); finalizeAuto(curSet); }   // exact counts once the set ends
-  if (p === 'work') { curSet++; cleanFast.set = 0; setMeta[curSet] = { movement: $('move').value, kg: kgValue() || null, trueReps: null }; if (moveOf(curSet) === 'swing') { SWINGVIZ.reset(true); TONE.ensure(); } }
+  if (p === 'work') { curSet++; cleanFast.set = 0; setMeta[curSet] = { movement: $('move').value, kg: kgValue() || null, trueReps: null }; if (moveOf(curSet) === 'swing') { SWINGVIZ.reset(true); TONE.ensure(); } if (moveOf(curSet) === 'clean') { CLEANVIZ.reset(); vizCleanSeen = { set: curSet, n: 0, t: -1e9, caught: false }; TONE.ensure(); } }
   phase = p; phaseStart = now;
   if (p !== 'idle') phases.push({ phase: p, set: curSet, t0: now, t1: null });
   save(); updateButtons(); render();
@@ -725,6 +725,34 @@ const SWINGVIZ = (() => {
 })();
 /* SWINGVIZ-MODEL END */
 
+/* CLEANVIZ-MODEL START */
+// Clean dial (display only, Cleans movement). Twist = integral of the gyro about the bell's handle axis (board x), measured from the
+// last time the bell hung still, as a magnitude, so either hand and either face read the same. A clean turns it about 225-310 deg into
+// the rack and the drop turns it back (all three clean captures, 15 Nov, both hands). Re-anchored at every hang (handle axis near
+// vertical: |ax| of the unit acceleration > HANG, gyro quiet), so drift cannot build up. tilt = how far the handle axis has tipped from
+// hanging (0) towards the rack (1), straight from gravity. Not used by any count.
+const CLEANVIZ = (() => {
+  const HANG = 0.93, RACK_TILT = 0.55, KEEP_MS = 4000;
+  let th = 0, base = 0, lastMs = null, tilt = 0, twist = 0, peak = 0, hist = [], lastT = 0;
+  function reset() { th = 0; base = 0; lastMs = null; tilt = 0; twist = 0; peak = 0; hist = []; lastT = 0; }
+  function keep(epoch) { lastT = epoch; hist.push({ t: epoch, tw: twist }); while (hist.length && epoch - hist[0].t > KEEP_MS) hist.shift(); }
+  function feed(ms, ax, ay, az, gx, gy, gz, epoch) {
+    const dt = lastMs == null ? 0 : ((ms - lastMs) >>> 0) / 1000; lastMs = ms;
+    if (dt > 0.5) { th = base = 0; return; }
+    th += gx * dt;
+    const a = Math.hypot(ax, ay, az) || 1, ux = Math.abs(ax) / a;
+    if (ux > HANG && Math.hypot(gx, gy, gz) < 120) base += (th - base) * Math.min(1, dt * 10);
+    twist = Math.abs(th - base);
+    tilt += (Math.max(0, Math.min(1, (1 - ux) / (1 - RACK_TILT))) - tilt) * Math.min(1, dt * 12);
+    keep(epoch);
+  }
+  function set(tw, tl, epoch) { twist = tw; tilt = tl; keep(epoch); }      // the simulator
+  function rep(epoch) { let m = 0; for (const h of hist) if (epoch - h.t < 1500 && h.tw > m) m = h.tw; peak = m; return m; }   // a counted clean: how far it turned
+  return { reset, feed, set, rep, RACK_DEG: 270,
+           get twist() { return twist; }, get tilt() { return tilt; }, get peak() { return peak; }, get lastT() { return lastT; } };
+})();
+/* CLEANVIZ-MODEL END */
+
 const VIZ_PAL = ['#ff4b12', '#ffc21a', '#4db6ff', '#2fd08a', '#ff8fb1'], VIZ_GREY = '#b9b6ae';
 const VIZ_NOTES = [261.63, 293.66, 329.63, 392, 440, 523.25, 587.33, 659.25, 783.99, 880];
 const TONE = (() => {
@@ -752,6 +780,10 @@ const TONE = (() => {
       if (short) { blip(110, 'sine', 0.2, 0.4); return; }
       const f = VIZ_NOTES[(n - 1) % 10]; blip(f, 'triangle', 0.32, 0.34); blip(f / 2, 'sine', 0.4, 0.22);
       if (n % 10 === 0) [523.25, 659.25, 783.99, 1046.5].forEach((q, i) => blip(q, 'triangle', 0.45, 0.26, 0.12 + i * 0.07));
+    },
+    clean(n) {               // a clean lands in the rack: a low thump plus a rising note (wraps every 5); a chime on every 5th
+      const f = [196, 220, 261.63, 293.66, 329.63][(n - 1) % 5]; blip(75, 'sine', 0.28, 0.55); blip(f, 'triangle', 0.4, 0.32);
+      if (n % 5 === 0) [523.25, 659.25, 783.99, 1046.5].forEach((q, i) => blip(q, 'triangle', 0.45, 0.26, 0.12 + i * 0.07));
     }
   };
 })();
@@ -764,7 +796,7 @@ function vizRep(r) {             // called for every counted swing rep
   vizLast = { t: r.t, col };
   TONE.rep(r.repInSet, short);
 }
-function vizDraw() {
+function swingDraw() {
   const c = $('viz'), dpr = window.devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight; if (!w || !h) return;
   if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
   const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -800,9 +832,78 @@ function vizDraw() {
     g.fillText(phase === 'work' ? 'waiting for the raw stream…' : 'press Start set, then swing', (L + R) / 2, h / 2);
   }
 }
+// ---- Clean dial: a clock face whose needle is the bell's twist; it sweeps round as the bell flips over the wrist and sits in the
+// RACK zone while racked. The arc behind it takes the colour of the next clean; the count lands in the middle. Three lights step
+// through pull (twist starting), flip (past 150 deg) and catch (the clean counted). The fader on the left is the handle's tilt.
+let vizCleanSeen = { set: 0, n: 0, t: -1e9, caught: false };
+function vizClean(n) {          // called for every counted live clean
+  const now = Date.now(), col = VIZ_PAL[(n - 1) % 5];
+  CLEANVIZ.rep(now); vizLast = { t: now, col }; vizCleanSeen.t = now; vizCleanSeen.caught = true;
+  TONE.clean(n);
+}
+function cleanDraw() {
+  const c = $('viz'), dpr = window.devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight; if (!w || !h) return;
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const now = Date.now(), INK = '#141414', MUTE = '#8a8780', GREY = '#b9b6ae', PAPER = '#f5f4f0', mono = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
+  const live = now - CLEANVIZ.lastT < 1500 && phase === 'work';
+  const tw = live ? CLEANVIZ.twist : 0, tl = live ? CLEANVIZ.tilt : 0;
+  const n = cleanFast.set === curSet && phase === 'work' ? cleanFast.n : 0;
+  if (vizCleanSeen.caught && tw < 90) vizCleanSeen.caught = false;                  // dropped back down: ready for the next clean
+  const col = vizCleanSeen.caught ? VIZ_PAL[(n - 1 + 5) % 5] : VIZ_PAL[n % 5];
+  g.fillStyle = PAPER; g.fillRect(0, 0, w, h);
+  const k = (now - vizLast.t) / 700;
+  if (k < 1) { g.globalAlpha = (1 - k) * 0.16; g.fillStyle = vizLast.col; g.fillRect(0, 0, w, h); g.globalAlpha = 1; }
+  g.fillStyle = '#d3d0c8'; for (let x = 11; x < w; x += 22) for (let y = 11; y < h; y += 22) g.fillRect(x - 1, y - 1, 2, 2);
+  const rr = (x, y, ww, hh, r) => { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + ww, y, x + ww, y + hh, r); g.arcTo(x + ww, y + hh, x, y + hh, r); g.arcTo(x, y + hh, x, y, r); g.arcTo(x, y, x + ww, y, r); g.closePath(); };
+  // tilt fader
+  const fx = 22, f0 = h * 0.82, f1 = h * 0.12, FY = v => f0 - (f0 - f1) * v;
+  rr(fx - 9, f1 - 9, 18, f0 - f1 + 18, 9); g.fillStyle = '#e6e3db'; g.fill(); g.strokeStyle = INK; g.lineWidth = 2; g.stroke();
+  g.font = '10px ' + mono; g.fillStyle = MUTE; g.textAlign = 'left'; g.fillText('RACK', fx + 15, FY(1) + 4); g.fillText('HANG', fx + 15, FY(0) + 4);
+  rr(fx - 11, FY(tl) - 9, 22, 18, 5); g.fillStyle = live ? col : PAPER; g.fill(); g.strokeStyle = INK; g.lineWidth = 2.5; g.stroke();
+  // dial
+  const R = Math.min(h * 0.36, w * 0.3), cx = w * 0.56, cy = h * 0.43, A = d => (d - 90) * Math.PI / 180;
+  g.beginPath(); g.arc(cx, cy, R, 0, 7); g.fillStyle = PAPER; g.fill(); g.strokeStyle = INK; g.lineWidth = 2.5; g.stroke();
+  g.strokeStyle = 'rgba(20,20,20,.10)'; g.lineWidth = R * 0.16; g.beginPath(); g.arc(cx, cy, R * 0.8, A(225), A(315)); g.stroke();     // rack zone
+  for (let d = 0; d < 360; d += 30) {
+    const a = A(d), major = d % 90 === 0, r0 = R - (major ? 12 : 7);
+    g.strokeStyle = major ? INK : MUTE; g.lineWidth = major ? 2.5 : 1.5;
+    g.beginPath(); g.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); g.lineTo(cx + Math.cos(a) * (R - 3), cy + Math.sin(a) * (R - 3)); g.stroke();
+  }
+  g.fillStyle = MUTE; g.font = '10px ' + mono; g.textAlign = 'right'; g.fillText('RACK', cx - R - 6, cy + 4);
+  g.textAlign = 'center'; g.fillText('HANG', cx, cy - R - 6);
+  const sw = Math.min(359, tw);
+  if (sw > 2) { g.strokeStyle = col; g.lineWidth = R * 0.13; g.lineCap = 'butt'; g.beginPath(); g.arc(cx, cy, R * 0.62, A(0), A(sw)); g.stroke(); }
+  if (CLEANVIZ.peak > 0 && n > 0) {                       // where the last clean got to
+    const a = A(Math.min(359, CLEANVIZ.peak)); g.strokeStyle = INK; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(cx + Math.cos(a) * R * 0.5, cy + Math.sin(a) * R * 0.5); g.lineTo(cx + Math.cos(a) * R * 0.74, cy + Math.sin(a) * R * 0.74); g.stroke();
+  }
+  const na = A(sw), nx = cx + Math.cos(na) * R * 0.86, ny = cy + Math.sin(na) * R * 0.86;
+  g.strokeStyle = INK; g.lineWidth = 3.5; g.lineCap = 'round'; g.beginPath(); g.moveTo(cx, cy); g.lineTo(nx, ny); g.stroke();
+  g.beginPath(); g.arc(nx, ny, 8, 0, 7); g.fillStyle = live ? col : PAPER; g.fill(); g.strokeStyle = INK; g.lineWidth = 2.5; g.stroke();
+  if (k < 1) { g.save(); g.globalAlpha = 1 - k; g.strokeStyle = vizLast.col; g.lineWidth = 4; g.beginPath(); g.arc(cx, cy, R * (1 + k * 0.18), 0, 7); g.stroke(); g.restore(); }
+  g.fillStyle = INK; g.beginPath(); g.arc(cx, cy, 4, 0, 7); g.fill();
+  if (n > 0) { g.font = '700 ' + Math.round(R * 0.42) + 'px ' + mono; g.textAlign = 'center'; g.fillText(String(n), cx, cy + R * 0.42); }
+  // pull / flip / catch
+  [['PULL', live && (tw > 40 || vizCleanSeen.caught)], ['FLIP', live && (tw > 150 || vizCleanSeen.caught)], ['CATCH', live && vizCleanSeen.caught]].forEach(([l, on], i) => {
+    const x = cx + (i - 1) * Math.min(64, w * 0.16), y = h * 0.88;
+    rr(x - 20, y - 8, 40, 14, 4); g.fillStyle = on ? col : '#e6e3db'; g.fill(); g.strokeStyle = INK; g.lineWidth = 2; g.stroke();
+    g.fillStyle = MUTE; g.font = '700 9px ' + mono; g.textAlign = 'center'; g.fillText(l, x, y + 20);
+  });
+  if (!live) { g.fillStyle = MUTE; g.font = '11px ' + mono; g.textAlign = 'center'; g.fillText(phase === 'work' ? 'waiting for the raw stream…' : 'press Start set, then clean', cx, cy + R * 0.25); }
+}
+let vizMode = null;
+function vizDraw() { if (vizMode === 'clean') cleanDraw(); else swingDraw(); }
 function vizLoop() { if (!vizRunning) return; vizDraw(); requestAnimationFrame(vizLoop); }
-function vizVisible(show) {
+const VIZ_TEXT = {
+  swing: ['SWING TRACE', 'Bell angle from the gyro, scrolling left. A dot lands at each counted rep (hollow = short swing). Shows for the Swings movement only.', '210px'],
+  clean: ['CLEAN DIAL', 'The needle is the bell\'s twist as it flips over the wrist; it sits in the RACK zone while racked. The fader is the handle tipping from hanging to the rack. Each clean lights CATCH, plays a note and adds to the count. Shows for the Cleans movement only.', '270px']
+};
+function vizVisible(mode) {
+  const show = !!mode;
   $('vizCard').style.display = show ? '' : 'none';
+  if (show && mode !== vizMode) { $('vizTitle').textContent = VIZ_TEXT[mode][0]; $('vizNote').textContent = VIZ_TEXT[mode][1]; $('viz').style.height = VIZ_TEXT[mode][2]; }
+  vizMode = mode;
   if (show && !vizRunning) { vizRunning = true; requestAnimationFrame(vizLoop); }
   if (!show) vizRunning = false;
 }
@@ -864,9 +965,15 @@ function onRaw(dv) {
     });
     rawStats.times.push(ms >>> 0);
     if (phase === 'work' && moveOf(curSet) === 'swing') { const q = raw[raw.length - 1]; SWINGVIZ.feed(q.ms, q.ax / 1000, q.ay / 1000, q.az / 1000, q.gx, q.gy, q.gz, q.t); }
+    if (phase === 'work' && moveOf(curSet) === 'clean') { const q = raw[raw.length - 1]; CLEANVIZ.feed(q.ms, q.ax / 1000, q.ay / 1000, q.az / 1000, q.gx, q.gy, q.gz, Date.now()); }
   }
   if (rawStats.times.length > 200) rawStats.times.splice(0, rawStats.times.length - 200);
-  if (updateCleanFast()) render();
+  if (updateCleanFast()) { vizCleanCount(); render(); }
+}
+function vizCleanCount() {   // a tone and a CATCH for every new live clean
+  if (phase !== 'work' || moveOf(curSet) !== 'clean' || cleanFast.set !== curSet) return;
+  if (vizCleanSeen.set !== curSet) vizCleanSeen = { set: curSet, n: 0, t: -1e9, caught: false };
+  while (vizCleanSeen.n < cleanFast.n) vizClean(++vizCleanSeen.n);
 }
 
 // ---------- Export ----------
@@ -986,7 +1093,8 @@ function render() {
   $('radHint').textContent = 'Pivot-to-bell distance used in the power estimate. The default 0.60 m suits typical swings with 12 kg and 20 kg bells; change it only if you want to calibrate to a measured value.' +
     (isFinite(rMeas) ? ' The sensor alone suggests ' + rMeas.toFixed(2) + ' m this session, but that estimate reads high on heavier bells, so it is not used.' : '');
 
-  vizVisible(phase === 'work' ? moveOf(curSet) === 'swing' : $('move').value === 'swing');   // follows the movement chosen for the next set
+  { const m = phase === 'work' ? moveOf(curSet) : $('move').value;   // follows the movement chosen for the next set
+    vizVisible(m === 'swing' || m === 'clean' ? m : null); }
   drawChart(cur);
 
   const now = Date.now();
@@ -1051,13 +1159,26 @@ $('btnSim').onclick = () => {
   if (simTimer) { clearInterval(simTimer); simTimer = null; $('btnSim').textContent = 'Simulate'; return; }
   $('btnSim').textContent = 'Stop simulation';
   TONE.ensure();
-  let n = reps.length ? reps[reps.length - 1].devTotal : 0, k = 0, p = 0.2, amp = 1;
+  let n = reps.length ? reps[reps.length - 1].devTotal : 0, k = 0, p = 0.2, amp = 1, simClean = { q: 0, ph: 0 };
   const j = s => (Math.random() - 0.5) * 2 * s;
   simTimer = setInterval(() => {   // 50 Hz stand-in for the sensor: a bell angle for the trace, and a rep packet at each float (every 7th is short)
     const prev = p; p += 0.02 / 1.6;
     if (p >= 1) { p -= 1; amp = (k % 7 === 6) ? 0.8 : 1; }
     const v = (1 - Math.cos(2 * Math.PI * p)) / 2, ww = 1 - Math.pow(1 - v, 1.35);
     if (phase === 'work' && moveOf(curSet) === 'swing') SWINGVIZ.push(Date.now(), -55 + 170 * ww * amp + j(1.5));
+    if (phase === 'work' && moveOf(curSet) === 'clean') {   // a clean every 3.2 s: pull, flip into the rack, hold, drop
+      const q = (p * 1.6 / 3.2 + (simClean.ph || 0)) % 1, e = x => x * x * (3 - 2 * x);
+      let tw = 0, tl = 0;
+      if (q < 0.15) {} else if (q < 0.27) { tw = 275 * e((q - 0.15) / 0.12); tl = e((q - 0.15) / 0.12) * 0.9; }
+      else if (q < 0.65) { tw = 275 + j(3); tl = 0.9 + j(0.02); } else if (q < 0.78) { tw = 275 * (1 - e((q - 0.65) / 0.13)); tl = 0.9 * (1 - e((q - 0.65) / 0.13)); }
+      CLEANVIZ.set(tw, tl, Date.now());
+      if (simClean.q < 0.45 && q >= 0.45) {
+        if (cleanFast.set !== curSet) cleanFast = { set: curSet, base: raw.length, i: raw.length, n: 0, lastK: -1e9, times: [], dir: 0 };
+        cleanFast.n++; cleanFast.times.push(Date.now()); vizCleanCount(); render();
+      }
+      simClean.q = q;
+      return;
+    }
     if (prev < 0.45 && p >= 0.45) {
       n++; k++;
       addRep({ devSet: 1, devTotal: n, peak: 2.5 + j(0.25), devInterval: 1600 + (j(40) | 0),
