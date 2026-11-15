@@ -232,6 +232,8 @@ const DEFAULT_RADIUS = 0.60;   // metres
 // A "short" swing never reached the float point: launch gyro well below any full swing in the test
 // data (short 72-122 dps, full 164-345 dps, 12 kg and 20 kg). Short swings are still counted but get
 // no power/energy figure. Reps with no launch reading (gyroLaunch 0) are treated as full.
+// NB: the launch gyro must be read at the START of the float (firmware v4+). Firmware v3 read it 150 ms in, when the bell had slowed,
+// so every swing looked short (seen 15 Nov, 12 kg full swings reading 6-48 dps).
 const SHORT_DPS = 150;
 const isShort = r => r.gyroLaunch > 0 && r.gyroLaunch < SHORT_DPS;
 function repRadius(r) {

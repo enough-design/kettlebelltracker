@@ -48,7 +48,7 @@
 #include <utility/ATT.h>
 #include "Arduino_BMI270_BMM150.h"
 
-#define FW_VERSION "v3 (+/-8 g)"
+#define FW_VERSION "v4 (+/-8 g, launch gyro at float start)"
 
 // ---- IMU at +/-8 g ----
 // The library fixes the accelerometer at +/-4 g. This subclass uses the library's own hook
@@ -136,6 +136,7 @@ uint32_t lastRepTime = 0;     // time the last counted float began
 bool     armed = false;       // a real swing (|a| > ARM_G) has happened since the last rep
 bool     counted = false;     // this float has already been counted
 uint32_t lowSince = 0;        // when |a| first dropped below LOW_G (0 = not currently low)
+float    gyroAtLow = 0;       // gyro magnitude at that instant = launch speed (not 150 ms later, when the bell has slowed)
 
 // ---- Per-rep metric tracking ----
 float    runPeak = 0;         // highest |a| since the last rep (g)
@@ -315,10 +316,10 @@ void processSample(float ax, float ay, float az) {
   if (mag > ARM_G) armed = true;
 
   if (mag < LOW_G) {
-    if (lowSince == 0) lowSince = now;
+    if (lowSince == 0) { lowSince = now; gyroAtLow = gmag; }
     if (armed && !counted && (now - lowSince) >= MIN_FLOAT_MS &&
         (lastRepTime == 0 || (lowSince - lastRepTime) >= MIN_REP_GAP)) {
-      registerRep(runPeak, lowSince, gmag);
+      registerRep(runPeak, lowSince, gyroAtLow);
       counted = true;
       armed = false;
       runPeak = 0; peakTime = 0; peakGyro = 0; peakFollow = false; sweepRad = 0;
