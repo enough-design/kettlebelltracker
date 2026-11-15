@@ -35,6 +35,9 @@ T = {  # file: {set: (swings, presses, cleans)}
  # 15 Nov 12:13 Auto test, Nano on the back (sets 4 and 7 mounting not noted). 4 swings, 4 cleans, 4 presses per set; sets 1, 2, 9 had a
  # clean into the rack before the presses (5 cleans, James's convention; set 1 order S, C, C(rack), P). Set 8: 10 floor bangs, nothing counted.
  'kb_raw_12kg-auto-test_2026-11-15-12-13-23.csv': {1: (4, 4, 5), 2: (4, 4, 5), 3: (4, 4, 4), 4: (4, 4, 4), 5: (4, 4, 4), 6: (4, 4, 4), 7: (4, 4, 4), 8: (0, 0, 0), 9: (4, 4, 5)},
+ # 15 Nov 14:46 clean/rack tests, Nano on the back: slow cleans with 2-3 s and 5 s+ rack holds; clean, settle, 4 presses x3;
+ # clean and press straight out of it; alternating clean / press. All correct on the page (James).
+ 'kb_raw_12kg-cleans-test_2026-11-15-14-46-32.csv': {1: (0, 0, 5), 2: (0, 0, 5), 3: (0, 12, 3), 4: (0, 4, 1), 5: (0, 4, 4)},
  'kb_raw_12kg-mix_2026-11-13-21-14-44.csv': {1: (10, 5, 6), 2: (5, None, 5)},
  'kb_raw_12kg-swings_2026-11-13-16-53-01.csv': {1: (8, None, 5), 2: (8, 5, 5), 3: (8, 5, 1), 4: (8, 5, 1), 5: (None, None, None)},
 }
