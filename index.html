@@ -236,7 +236,9 @@ const DEFAULT_RADIUS = 0.60;   // metres
 // The old rule (launch gyro under 150 dps) read 20 of those 194 wrong: it depends on the mounting face (a full swing with the Nano
 // on the back reads 60-280 dps) and, in firmware v3, was sampled 150 ms into the float. Launch gyro is still used for the energy figure.
 // Peak 0 (no reading) is treated as full.
-const SHORT_PEAK = 2.1, SHORT_DEPTH = 0.26;
+// 15 Nov 11:29 retest: depth 0.26 -> 0.28 (back-mounted full swings reach 0.26); the first rep of a set starts from a standstill, so its
+// peak is low even when full: it is judged on depth alone (known about 0.7 s after the rep).
+const SHORT_PEAK = 2.1, SHORT_DEPTH = 0.28;
 function repDepth(r) {               // lowest |a| in the float around a rep, from the raw stream; undefined until the float is over
   if (r.depth !== undefined) return r.depth;
   const n = raw.length; if (!n || raw[n - 1].t < r.t + 700) return undefined;
@@ -249,7 +251,7 @@ function repDepth(r) {               // lowest |a| in the float around a rep, fr
 }
 const isShort = r => {
   if (!(r.peak > 0)) return false;
-  if (r.peak < SHORT_PEAK) return true;
+  if (r.peak < SHORT_PEAK && r.repInSet !== 1) return true;
   const d = repDepth(r); return d != null && d > SHORT_DEPTH;
 };
 function repRadius(r) {
@@ -501,7 +503,7 @@ const OHP = (() => {
   // vertical axis) by 108 to 297 deg; a swing by under 40. Same with the Nano on the front or back face; abs() covers the other hand.
   // FLOAT_MIN was 0.29 s: with the Nano on the back full swings float 0.26-0.30 s and short ones 0.20-0.26 s (15 Nov), so most were missed.
   // Short swing: same rule as Swings mode (peak under 2.1 g or float depth above 0.26 g); was depth above 0.18 g, which flagged back-mounted full swings.
-  const FLOAT_MIN = 0.2, AUTO_CLEAN = 350, CLEAN_ROT = 210, NX_CLEAN = 80, UP_WIN = 15, SWING_PEAK = 2.1, SWING_DEPTH = 0.26;
+  const FLOAT_MIN = 0.2, AUTO_CLEAN = 350, CLEAN_ROT = 210, NX_CLEAN = 80, UP_WIN = 15, SWING_PEAK = 2.1, SWING_DEPTH = 0.28;
   function labelSet(s, tmax = Infinity) {
     const n = s.ax.length; if (n < 4 * FS) return { swings: [], cleans: [], presses: [] };
     const z = heightTrace(s), g = s.gm, gx = s.gx, t = s.t, a = new Float64Array(n);
@@ -532,7 +534,7 @@ const OHP = (() => {
       if (H[j].press && !H[j + 1].press && H[j + 1].swingLike && H[j + 1].t - H[j].t <= SWING_GAP) H[j].press = false;
     const P = H.filter(h => h.press), r = rise(z, P.map(h => h.k)), sh = shortFlags(r);
     return {
-      swings: H.filter(h => h.swingLike && !h.press && h.t <= tmax).map(h => ({ k: h.k, t: h.t, depth: h.amin, apk: h.apk, short: h.apk < SWING_PEAK || h.amin > SWING_DEPTH })),
+      swings: H.filter(h => h.swingLike && !h.press && h.t <= tmax).map((h, i) => ({ k: h.k, t: h.t, depth: h.amin, apk: h.apk, short: (i > 0 && h.apk < SWING_PEAK) || h.amin > SWING_DEPTH })),
       cleans: cl.filter(k => t[k] <= tmax).map(k => ({ k, t: t[k] })),
       presses: P.map((h, i) => ({ k: h.k, t: h.t, rise: r[i], short: sh[i] })).filter(q => q.t <= tmax)
     };

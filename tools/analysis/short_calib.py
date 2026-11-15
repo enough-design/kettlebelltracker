@@ -4,6 +4,12 @@ import csv, numpy as np
 R = 'data/raw/'
 # (file, set, mounting, truth)   truth F full / S short
 CASES = [
+ # 11:29 retest (James: testing back mounting): sets 1-3 full, 4-5 short. Mounting per set not noted; floats look back-mounted.
+ ('kb_raw_12kg-swing-halfvfullvbackvfront_2026-11-15-11-29-57.csv',1,'back?','F'),
+ ('kb_raw_12kg-swing-halfvfullvbackvfront_2026-11-15-11-29-57.csv',2,'back?','F'),
+ ('kb_raw_12kg-swing-halfvfullvbackvfront_2026-11-15-11-29-57.csv',3,'back?','F'),
+ ('kb_raw_12kg-swing-halfvfullvbackvfront_2026-11-15-11-29-57.csv',4,'back?','S'),
+ ('kb_raw_12kg-swing-halfvfullvbackvfront_2026-11-15-11-29-57.csv',5,'back?','S'),
  ('kb_raw_12kg-swing-halfvfullvbackvfront_2026-11-15-11-16-16.csv',1,'front','F'),
  ('kb_raw_12kg-swing-halfvfullvbackvfront_2026-11-15-11-16-16.csv',2,'front','S'),
  ('kb_raw_12kg-swing-halfvfullvbackvfront_2026-11-15-11-16-16.csv',3,'front','S'),
@@ -42,13 +48,12 @@ def dataset():
     D=[]
     for f,s,mt,tr in CASES:
         for k,r in enumerate(reps(f,s)):
-            if k==0: continue          # first rep of a set starts from rest: not comparable
-            D.append(dict(file=f[7:30],set=s,mount=mt,truth=tr,**r))
+            D.append(dict(first=k==0,file=f[7:30],set=s,mount=mt,truth=tr,**r))
     return D
 if __name__=='__main__':
     D=dataset()
-    for mt in ('front','back'):
+    for mt in ('front','back','back?'):
         for tr in 'FS':
-            X=[d for d in D if d['mount']==mt and d['truth']==tr]
+            X=[d for d in D if d['mount']==mt and d['truth']==tr and not d['first']]
             if not X: continue
             print(mt,tr,len(X),' '.join('%s %.2f-%.2f'%(k,min(x[k] for x in X),max(x[k] for x in X)) for k in ('launch','depth','dur','peak','gpk')))

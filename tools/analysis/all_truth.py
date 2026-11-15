@@ -30,6 +30,8 @@ T = {  # file: {set: (swings, presses, cleans)}
  'kb_raw_12kg-swing-trace_2026-11-15-10-39-17.csv': {1: (10, 0, 0), 2: (10, 0, 0)},
  'kb_raw_12kg-swing-trace_2026-11-15-10-59-51.csv': {1: (20, 0, 0), 2: (20, 0, 0), 3: (11, 0, 0), 4: (10, 0, 0), 5: (10, 0, 0)},
  'kb_raw_12kg-swing-halfvfullvbackvfront_2026-11-15-11-16-16.csv': {1: (10, 0, 0), 2: (10, 0, 0), 3: (10, 0, 0), 4: (10, 0, 0), 5: (10, 0, 0)},
+ # 11:29 retest: sets 4 and 5 short swings, many too short to register on the Nano (James: fine), so swing counts unscored.
+ 'kb_raw_12kg-swing-halfvfullvbackvfront_2026-11-15-11-29-57.csv': {1: (20, 0, 0), 2: (11, 0, 0), 3: (10, 0, 0)},
  'kb_raw_12kg-mix_2026-11-13-21-14-44.csv': {1: (10, 5, 6), 2: (5, None, 5)},
  'kb_raw_12kg-swings_2026-11-13-16-53-01.csv': {1: (8, None, 5), 2: (8, 5, 5), 3: (8, 5, 1), 4: (8, 5, 1), 5: (None, None, None)},
 }
