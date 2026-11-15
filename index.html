@@ -503,7 +503,7 @@ const OHP = (() => {
   // vertical axis) by 108 to 297 deg; a swing by under 40. Same with the Nano on the front or back face; abs() covers the other hand.
   // FLOAT_MIN was 0.29 s: with the Nano on the back full swings float 0.26-0.30 s and short ones 0.20-0.26 s (15 Nov), so most were missed.
   // Short swing: same rule as Swings mode (peak under 2.1 g or float depth above 0.26 g); was depth above 0.18 g, which flagged back-mounted full swings.
-  const FLOAT_MIN = 0.2, AUTO_CLEAN = 350, CLEAN_ROT = 210, NX_CLEAN = 80, UP_WIN = 15, SWING_PEAK = 2.1, SWING_DEPTH = 0.28;
+  const CLEAN_SEP = 1.0, CLEAN_QUIET = 0.9, FLOAT_MIN = 0.2, AUTO_CLEAN = 350, CLEAN_ROT = 210, NX_CLEAN = 80, UP_WIN = 15, SWING_PEAK = 2.1, SWING_DEPTH = 0.28;
   function labelSet(s, tmax = Infinity) {
     const n = s.ax.length; if (n < 4 * FS) return { swings: [], cleans: [], presses: [] };
     const z = heightTrace(s), g = s.gm, gx = s.gx, t = s.t, a = new Float64Array(n);
@@ -520,11 +520,15 @@ const OHP = (() => {
     // clean: a hard twist about the x axis while the bell is rising
     const cl = findPeaks(g, { height: AUTO_CLEAN, distance: 30 }).idx.filter(k =>
       z[Math.min(n - 1, k + UP_WIN)] - z[Math.max(0, k - UP_WIN)] > 0 && Math.abs(sum(gx, k - 25, k + 25)) / FS >= NX_CLEAN && sum(g, k - 25, k + 25) / FS >= CLEAN_ROT);
+    for (let j = cl.length - 1; j > 0; j--)   // one clean can give two bursts (15 Nov 12:13 set 4, 0.6 s apart): keep the stronger
+      if (t[cl[j]] - t[cl[j - 1]] < CLEAN_SEP) cl.splice(g[cl[j]] > g[cl[j - 1]] ? j - 1 : j, 1);
     const ct = cl.map(k => t[k]);
     // walk through the set in time order: a press needs the bell racked, i.e. the last clean is more recent than the last swing
+    // arm moving before the press, not counting the clean's own burst (a pause in the rack after a clean read as a press, 15 Nov 12:13)
+    const mvAfterClean = h => { let m = 0; for (let j = Math.max(0, h.k - 75); j < Math.max(1, h.k - 10); j++) if (!ct.some(c => t[j] - c >= -0.5 && t[j] - c < CLEAN_QUIET) && g[j] > m) m = g[j]; return m; };
     let lastSwing = -1e9;
     H.forEach(h => {
-      const feat = h.rot > ROT_MIN && h.rot < ROT_MAX && h.pre < PRE_MAX && h.mv >= MOVE_MIN && h.nx < NX_CLEAN && !ct.some(c => h.t - c >= 0 && h.t - c < CLEAN_GUARD);
+      const feat = mvAfterClean(h) >= MOVE_MIN && h.rot > ROT_MIN && h.rot < ROT_MAX && h.pre < PRE_MAX && h.mv >= MOVE_MIN && h.nx < NX_CLEAN && !ct.some(c => h.t - c >= 0 && h.t - c < CLEAN_GUARD);
       const before = ct.filter(c => c < h.t);
       h.press = feat && before.length > 0 && before[before.length - 1] > lastSwing;
       if (h.swingLike && ct.some(c => h.t - c >= 0 && h.t - c < CLEAN_GUARD)) h.swingLike = false;   // the top of a clean, already counted as a clean
@@ -536,7 +540,9 @@ const OHP = (() => {
     return {
       swings: H.filter(h => h.swingLike && !h.press && h.t <= tmax).map((h, i) => ({ k: h.k, t: h.t, depth: h.amin, apk: h.apk, short: (i > 0 && h.apk < SWING_PEAK) || h.amin > SWING_DEPTH })),
       cleans: cl.filter(k => t[k] <= tmax).map(k => ({ k, t: t[k] })),
-      presses: P.map((h, i) => ({ k: h.k, t: h.t, rise: r[i], short: sh[i] })).filter(q => q.t <= tmax)
+      // short presses not flagged in Auto: in mixed sets the measured press height climbs through the set (15 Nov 12:13: 55 -> 112 cm
+      // on full presses), so the relative-height rule flagged full presses. Overhead press mode still flags them.
+      presses: P.map((h, i) => ({ k: h.k, t: h.t, rise: r[i], short: null })).filter(q => q.t <= tmax)
     };
   }
   const OHP = { finalReps, liveReps, labelSet, LIVE_LAG, heightTrace, findPeaks, filtfilt, F, FS };
@@ -591,7 +597,7 @@ function finalizeAuto(set) {
 // counts for an auto set: final if the set has ended, live while it runs
 const autoCounts = s => { const m = setMeta[s]; if (m && m.auto) return { swings: m.auto.swings.length, cleans: m.auto.cleans.length, presses: m.auto.presses.length, final: true };
   return s === autoLive.set ? { ...autoLive.n, final: false } : null; };
-const autoShort = s => { const m = setMeta[s]; return m && m.auto ? m.auto.swings.filter(r => r.short).length + m.auto.presses.filter(r => r.short).length : 0; };
+const autoShort = s => { const m = setMeta[s]; return m && m.auto ? m.auto.swings.filter(r => r.short).length : 0; };   // short swings only
 const nanoSwings = s => reps.filter(r => r.set === s && r.phase === 'work').length;   // the Nano's own swing count, as a cross-check
 const pressCount = s => { const m = setMeta[s]; if (m && m.press) return m.press.reps.length; return s === pressLive.set ? pressLive.n : null; };
 const pressShort = s => { const m = setMeta[s]; return m && m.press ? m.press.reps.filter(r => r.short).length : 0; };
