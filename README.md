@@ -11,7 +11,7 @@ Live page: https://enough-design.github.io/kettlebelltracker/ (Chrome on Android
 | `data/replays/` | Rep packets as hex JSON (for page tests) and rep dumps from the firmware replay. |
 | `tools/harness2.cpp`, `tools/stubs/` | Compiles the real sketch against stub Arduino headers and replays a raw CSV through it. |
 | `tools/analysis/` | Python scripts (pandas / numpy / scipy) used for tuning. |
-| `tools/tests/` | Playwright page tests (headless Chromium). |
+| `tools/tests/` | Playwright page tests (headless Chromium). `viztest.js` replays recorded swing sets through the swing-trace angle model; `viztest_page.js` checks the trace card shows for Swings only. |
 
 Replay a CSV through the firmware logic:
 `g++ -std=c++17 -I tools/stubs -I firmware/kb_tracker tools/harness2.cpp -o harness2 && ./harness2 <modes, see harness2.cpp>`
