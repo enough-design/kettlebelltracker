@@ -25,6 +25,11 @@ T = {  # file: {set: (swings, presses, cleans)}
  # '8 cleans into 5 presses' but the data is 8 swings then 5 cleans with drops - to confirm with James.
  # second blind test of Auto-detect (v6), 13 Nov 21:14. Set 2: the stream stopped (Nano restarted) about 2 s before the end of the presses,
  # so the last presses are cut off; presses unscored.
+ # 15 Nov swing-only sets, Nano on front and back (James: all full except the sets noted short). Counts from James where given, else the
+ # Nano's own count (no disagreement noted). Back face: 10:39 set 1; 10:59 sets 2, 3, 5; calibration sets 4, 5.
+ 'kb_raw_12kg-swing-trace_2026-11-15-10-39-17.csv': {1: (10, 0, 0), 2: (10, 0, 0)},
+ 'kb_raw_12kg-swing-trace_2026-11-15-10-59-51.csv': {1: (20, 0, 0), 2: (20, 0, 0), 3: (11, 0, 0), 4: (10, 0, 0), 5: (10, 0, 0)},
+ 'kb_raw_12kg-swing-halfvfullvbackvfront_2026-11-15-11-16-16.csv': {1: (10, 0, 0), 2: (10, 0, 0), 3: (10, 0, 0), 4: (10, 0, 0), 5: (10, 0, 0)},
  'kb_raw_12kg-mix_2026-11-13-21-14-44.csv': {1: (10, 5, 6), 2: (5, None, 5)},
  'kb_raw_12kg-swings_2026-11-13-16-53-01.csv': {1: (8, None, 5), 2: (8, 5, 5), 3: (8, 5, 1), 4: (8, 5, 1), 5: (None, None, None)},
 }

@@ -499,18 +499,21 @@ const OHP = (() => {
   // ---- Auto mode (trial): label every rep as swing, clean or press (mirrors tools/analysis/moves_v5.py, v6) ----
   // Cleans and swings are told apart by the AXIS of rotation: a clean spins the bell about the board's x axis (USB axis, the bell's
   // vertical axis) by 108 to 297 deg; a swing by under 40. Same with the Nano on the front or back face; abs() covers the other hand.
-  const FLOAT_MIN = 0.29, AUTO_CLEAN = 350, CLEAN_ROT = 210, NX_CLEAN = 80, UP_WIN = 15, SWING_DEPTH = 0.18;
+  // FLOAT_MIN was 0.29 s: with the Nano on the back full swings float 0.26-0.30 s and short ones 0.20-0.26 s (15 Nov), so most were missed.
+  // Short swing: same rule as Swings mode (peak under 2.1 g or float depth above 0.26 g); was depth above 0.18 g, which flagged back-mounted full swings.
+  const FLOAT_MIN = 0.2, AUTO_CLEAN = 350, CLEAN_ROT = 210, NX_CLEAN = 80, UP_WIN = 15, SWING_PEAK = 2.1, SWING_DEPTH = 0.26;
   function labelSet(s, tmax = Infinity) {
     const n = s.ax.length; if (n < 4 * FS) return { swings: [], cleans: [], presses: [] };
     const z = heightTrace(s), g = s.gm, gx = s.gx, t = s.t, a = new Float64Array(n);
     for (let i = 0; i < n; i++) a[i] = Math.hypot(s.ax[i], s.ay[i], s.az[i]);
     const sum = (arr, lo, hi) => { let v = 0; for (let j = Math.max(0, lo); j < Math.min(n, hi); j++) v += arr[j]; return v; };
     const H = findPeaks(z, { prominence: PROM, distance: 30 }).idx.map(k => {
-      let run = 0, best = 0, amin = Infinity, mv = 0;
+      let run = 0, best = 0, amin = Infinity, mv = 0, apk = 0;
+      for (let j = Math.max(0, k - 50); j < k; j++) if (a[j] > apk) apk = a[j];   // drive at the bottom of the swing, within 1 s before the top
       for (let j = Math.max(0, k - 50); j < Math.min(n, k + 38); j++) { if (a[j] < 0.55) { run++; if (run > best) best = run; } else run = 0; if (a[j] < amin) amin = a[j]; }
       for (let j = Math.max(0, k - 75); j < Math.max(1, k - 10); j++) if (g[j] > mv) mv = g[j];
       const rot = sum(g, k - 38, k + 13) / FS, nx = Math.abs(sum(gx, k - 38, k + 13)) / FS, fl = best / FS;
-      return { k, t: t[k], fl, amin, rot, nx, pre: maxBefore(g, k), mv, swingLike: fl >= FLOAT_MIN && rot >= 100 && nx < NX_CLEAN };
+      return { k, t: t[k], fl, amin, apk, rot, nx, pre: maxBefore(g, k), mv, swingLike: fl >= FLOAT_MIN && rot >= 100 && nx < NX_CLEAN };
     });
     // clean: a hard twist about the x axis while the bell is rising
     const cl = findPeaks(g, { height: AUTO_CLEAN, distance: 30 }).idx.filter(k =>
@@ -522,13 +525,14 @@ const OHP = (() => {
       const feat = h.rot > ROT_MIN && h.rot < ROT_MAX && h.pre < PRE_MAX && h.mv >= MOVE_MIN && h.nx < NX_CLEAN && !ct.some(c => h.t - c >= 0 && h.t - c < CLEAN_GUARD);
       const before = ct.filter(c => c < h.t);
       h.press = feat && before.length > 0 && before[before.length - 1] > lastSwing;
+      if (h.swingLike && ct.some(c => h.t - c >= 0 && h.t - c < CLEAN_GUARD)) h.swingLike = false;   // the top of a clean, already counted as a clean
       if (!h.press && h.swingLike) lastSwing = h.t;
     });
     for (let j = H.length - 2; j >= 0; j--)   // a press-looking hump right before a swing is the start of the swing run
       if (H[j].press && !H[j + 1].press && H[j + 1].swingLike && H[j + 1].t - H[j].t <= SWING_GAP) H[j].press = false;
     const P = H.filter(h => h.press), r = rise(z, P.map(h => h.k)), sh = shortFlags(r);
     return {
-      swings: H.filter(h => h.swingLike && !h.press && h.t <= tmax).map(h => ({ k: h.k, t: h.t, depth: h.amin, short: h.amin > SWING_DEPTH })),
+      swings: H.filter(h => h.swingLike && !h.press && h.t <= tmax).map(h => ({ k: h.k, t: h.t, depth: h.amin, apk: h.apk, short: h.apk < SWING_PEAK || h.amin > SWING_DEPTH })),
       cleans: cl.filter(k => t[k] <= tmax).map(k => ({ k, t: t[k] })),
       presses: P.map((h, i) => ({ k: h.k, t: h.t, rise: r[i], short: sh[i] })).filter(q => q.t <= tmax)
     };
