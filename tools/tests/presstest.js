@@ -23,7 +23,7 @@ function parse(f) {
   const b = await chromium.launch(); const page = await (await b.newContext({ viewport: { width: 390, height: 900 } })).newPage();
   const errs = []; page.on('pageerror', e => errs.push(e.message));
   await page.goto('file://' + process.cwd() + '/index.html#dev'); await page.evaluate(() => localStorage.clear()); await page.reload();
-  let ok = 0, tot = 0, liveOk = 0;
+  let ok = 0, tot = 0, liveOk = 0; const lat = []; let phantom = 0;
   for (const [f, sets] of Object.entries(TRUTH)) {
     const rows = parse(f);
     for (const [s, truth] of Object.entries(sets)) {
@@ -31,21 +31,24 @@ function parse(f) {
       const res = await page.evaluate(({ work }) => {
         reps = []; raw = []; phases = []; setMeta = {}; curSet = 0; phase = 'idle'; pressLive = { set: 0, hist: [], n: 0 };
         $('move').value = 'press'; setPhase('work');
-        const seen = [];
-        for (let i = 0; i < work.length; i += 25) {           // feed 0.5 s at a time, like the page's timer
-          work.slice(i, i + 25).forEach(r => raw.push({ ...r, phase: 'work', set: curSet }));
-          updatePressLive(); seen.push(pressLive.n);
+        const seen = [], inc = [];
+        for (let i = 0; i < work.length; i += 12) {           // feed about 0.25 s at a time, like the page's press timer
+          work.slice(i, i + 12).forEach(r => raw.push({ ...r, phase: 'work', set: curSet }));
+          const n0 = pressLive.n; updatePressLive(); seen.push(pressLive.n);
+          for (let c = n0; c < pressLive.n; c++) inc.push(raw[raw.length - 1].t);
         }
+        const finT = OHP.finalReps(pressSamples(curSet)).map(r => pressSamples(curSet).epoch[r.k]);
         const live = pressLive.n;
         setPhase('rest'); render();
-        return { live, seen, final: pressCount(curSet), short: pressShort(curSet), card: $('repsInSet').textContent, note: $('repsShort').textContent,
+        return { live, seen, lat: finT.map((t, i) => inc[i] != null ? (inc[i] - t) / 1000 : null).filter(v => v != null), over: Math.max(0, ...seen), final: pressCount(curSet), short: pressShort(curSet), card: $('repsInSet').textContent, note: $('repsShort').textContent,
                  row: [...document.querySelectorAll('#sets tr')].map(tr => tr.innerText.replace(/\s+/g, ' ')).pop() };
       }, { work });
-      tot++; ok += res.final === truth; liveOk += res.live === truth;
+      tot++; ok += res.final === truth; liveOk += res.live === truth; lat.push(...res.lat); if (res.over > truth) phantom++;
       const drops = res.seen.filter((v, i) => i && v < res.seen[i - 1]).length;
       console.log(`${f.slice(7, 40).padEnd(34)} set ${s}: truth ${String(truth).padStart(2)}  live-at-end ${String(res.live).padStart(2)}  final ${String(res.final).padStart(2)} ${res.final === truth ? '' : '<-- MISS'}  short ${res.short}  drops ${drops}  card "${res.card}" "${res.note}"`);
     }
   }
-  console.log(`\nfinal exact ${ok}/${tot}; live count equal to truth when Rest pressed ${liveOk}/${tot}; page errors: ${errs.length ? errs : 'none'}`);
-  await b.close();
+  lat.sort((a, c) => a - c); const q = x => lat[Math.floor(x * (lat.length - 1))].toFixed(2);
+  console.log(`\nfinal exact ${ok}/${tot}; live count equal to truth when Rest pressed ${liveOk}/${tot}; live ever above truth in ${phantom} sets; delay from lockout to the live count: median ${q(0.5)} s, 90% ${q(0.9)} s, max ${q(1)} s; page errors: ${errs.length ? errs : 'none'}`);
+  await b.close(); process.exit(ok === tot && liveOk === tot && !phantom && !errs.length ? 0 : 1);
 })();
