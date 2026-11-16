@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kettlebell Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
   :root { --bg:#0f1115; --card:#181b22; --fg:#eef0f4; --mut:#8b93a5; --acc:#ff6a2b; --ok:#3ddc97; --rest:#4aa8ff; --line:#2a2f3a; --pow:#f5c542; }
   * { box-sizing:border-box; }
@@ -68,9 +69,184 @@
   .viz button.on { background:#ffc21a; }
   .viz canvas#viz { width:100%; height:210px; display:block; }
   .viz .vn { color:#8a8780; font-size:10px; line-height:1.4; margin-top:4px; }
+  /* ---------- User view (Teenage Engineering style). Everything is scoped to #uv so the diagnostic view is untouched. ---------- */
+  body.u { background:#d6d3cb; padding:0; max-width:none; }
+  #uv { --paper:#e8e6e0; --stage:#f5f4f0; --ink:#141414; --umut:#6b6860; --uline:#c9c6be; --or:#ff4b12; --ye:#ffc21a; --bl:#4db6ff; --gr:#2fd08a;
+        max-width:440px; min-height:100vh; margin:0 auto; background:var(--paper); color:var(--ink); padding:20px 16px 26px; display:flex; flex-direction:column;
+        font-family:"Space Mono",ui-monospace,Menlo,Consolas,monospace; font-size:14px; line-height:1.35; }
+  #uv[hidden], #diag[hidden] { display:none !important; }
+  #uv .scr { display:none; flex-direction:column; gap:12px; flex:1; }
+  #uv .scr.on { display:flex; }
+  #uv .ucard { background:var(--stage); border:2px solid var(--ink); border-radius:12px; padding:0; }
+  #uv .lab { font-size:10px; letter-spacing:.1em; color:var(--umut); text-transform:uppercase; }
+  #uv .top { display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:28px; }
+  #uv .top b { font-size:12px; letter-spacing:.06em; }
+  #uv .dot { width:13px; height:13px; border-radius:50%; background:var(--or); border:2px solid var(--ink); display:inline-block; flex:none; }
+  #uv .sq { width:12px; height:12px; border-radius:3px; background:var(--bl); border:2px solid var(--ink); display:inline-block; flex:none; }
+  #uv button { font:700 11px "Space Mono",ui-monospace,monospace; letter-spacing:.06em; text-transform:uppercase; background:var(--stage); color:var(--ink);
+        border:2px solid var(--ink); border-radius:8px; padding:9px 10px; box-shadow:0 3px 0 var(--ink); min-height:44px; cursor:pointer; opacity:1; }
+  #uv button:active { transform:translateY(2px); box-shadow:0 1px 0 var(--ink); }
+  #uv button.sel { background:var(--ink); color:var(--paper); box-shadow:none; }
+  #uv button.kgb { font-size:15px; }
+  #uv button.kgb.sel { background:var(--ye); color:var(--ink); }
+  #uv button:disabled { background:var(--paper); color:var(--umut); border:2px dashed #9a978f; box-shadow:none; cursor:default; }
+  #uv button.dark { background:var(--ink); color:#ff6a2b; box-shadow:0 3px 0 #ff6a2b; }
+  #uv button.go { width:92px; height:92px; border-radius:50%; background:var(--or); box-shadow:0 5px 0 var(--ink); font-size:13px; flex:none; padding:0; }
+  #uv button.go:disabled { background:var(--paper); border:2px dashed #9a978f; }
+  #uv button.restb { flex:1; background:var(--bl); border-radius:12px; box-shadow:0 4px 0 var(--ink); padding:18px 0; font-size:18px; letter-spacing:.08em; }
+  #uv button.endb { border-radius:12px; box-shadow:0 4px 0 var(--ink); padding:14px; min-height:60px; }
+  #uv button.lnk { background:none; border:0; box-shadow:none; padding:10px 0; min-height:36px; text-decoration:underline; font-size:10px; }
+  #uv .g { display:grid; gap:8px; }
+  #uv .g2 { grid-template-columns:repeat(2,minmax(0,1fr)); } #uv .g3 { grid-template-columns:repeat(3,minmax(0,1fr)); } #uv .g4 { grid-template-columns:repeat(4,minmax(0,1fr)); }
+  #uv .mvb { display:flex; align-items:center; gap:10px; font-size:13px; min-height:58px; text-align:left; }
+  #uv .hud { display:grid; border:2px solid var(--ink); border-radius:10px; background:var(--stage); overflow:hidden; }
+  #uv .hud > div { padding:8px 10px; border-right:2px solid var(--ink); min-width:0; }
+  #uv .hud > div:last-child { border-right:0; }
+  #uv .hud i { display:block; font-style:normal; font-size:9px; letter-spacing:.1em; color:var(--umut); }
+  #uv .hud b { font-size:22px; display:block; white-space:nowrap; }
+  #uv .bigc { font-size:124px; line-height:.9; font-weight:700; letter-spacing:-.04em; }
+  #uv .chip { font-size:11px; font-weight:700; background:var(--stage); border:2px dashed var(--umut); border-radius:6px; padding:2px 6px; }
+  #uv .vizc { padding:10px 12px 8px; }
+  #uv .vizc .vh { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; font-size:11px; font-weight:700; letter-spacing:.1em; }
+  #uv canvas { width:100%; height:200px; display:block; }
+  #uv .viz { margin-bottom:0; }
+  #uv .unote { font-size:10px; color:var(--umut); line-height:1.45; margin-top:4px; }
+  #uv .strip { display:flex; gap:3px; flex-wrap:wrap; }
+  #uv .strip span { flex:1 0 9px; min-width:9px; height:10px; border-radius:2px; border:1px solid var(--ink); }
+  #uv .strip span.sh { background:var(--stage) !important; border:1px dashed var(--umut); }
+  #uv .flow { display:flex; gap:6px; flex-wrap:wrap; align-items:center; min-height:40px; padding:6px 0; }
+  #uv .flow span { width:18px; height:18px; border:2px solid var(--ink); display:inline-block; }
+  #uv .flow .fs { border-radius:50%; background:var(--or); } #uv .flow .fc { border-radius:4px; background:var(--bl); }
+  #uv .flow .fp { border:0; width:0; height:0; border-left:10px solid transparent; border-right:10px solid transparent; border-bottom:18px solid var(--gr); }
+  #uv .restpanel { background:var(--bl); border:2px solid var(--ink); border-radius:12px; padding:12px 16px; display:flex; align-items:center; justify-content:space-between; }
+  #uv .restpanel b { font-size:72px; line-height:1; letter-spacing:-.03em; }
+  #uv .sp { flex:1; min-height:6px; }
+  #uv table { width:100%; border-collapse:collapse; font-size:12px; }
+  #uv th, #uv td { padding:7px 4px; border-bottom:1px solid var(--uline); text-align:right; white-space:nowrap; }
+  #uv th { font-size:9px; letter-spacing:.08em; color:var(--umut); font-weight:400; }
+  #uv th:first-child, #uv td:first-child, #uv th:nth-child(2), #uv td:nth-child(2) { text-align:left; }
+  #uv tr:last-child td { border-bottom:0; }
+  #uv .fix { display:none; align-items:center; gap:10px; padding:0 12px 10px; }
+  #uv .fix.on { display:flex; }
+  #uv .fix b { font-size:20px; min-width:40px; text-align:center; }
+  #uv .warnc { background:var(--ye); border:2px solid var(--ink); border-radius:10px; padding:8px 10px; font-size:11px; line-height:1.4; display:none; }
+  #uToast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); max-width:360px; width:calc(100% - 40px); background:#141414; color:#e8e6e0;
+        border-radius:10px; padding:12px 14px; font:12px/1.45 "Space Mono",ui-monospace,monospace; opacity:0; pointer-events:none; transition:opacity .2s; z-index:9; }
+  #uToast.show { opacity:1; }
 </style>
 </head>
 <body>
+<!-- ================= USER VIEW (same connection, sets and counting as the diagnostic view below) ================= -->
+<div id="uv" hidden>
+<section class="scr on" id="uHome">
+  <div class="top" style="justify-content:flex-start;gap:10px"><span class="dot"></span><b style="font-size:16px">KB-01</b><span class="lab">Kettlebell tracker</span></div>
+  <div class="ucard" style="padding:14px;display:flex;align-items:center;gap:12px">
+    <span class="dot" id="uConnDot" style="background:#b9b6ae;width:16px;height:16px"></span>
+    <div style="flex:1;min-width:0"><div class="lab">Tracker</div><div style="font-size:15px;font-weight:700" id="uConnTxt">Not connected</div><div style="font-size:11px;color:var(--umut)" id="uConnSub">Back face of the bell, USB at the top</div></div>
+    <button type="button" id="uConn">Connect</button>
+  </div>
+  <div class="ucard" style="padding:16px;display:flex;align-items:center;gap:16px">
+    <button class="go" type="button" id="uStart">START</button>
+    <div><div style="font-size:18px;font-weight:700">Free workout</div><div style="font-size:11px;color:var(--umut)" id="uStartSub">Add sets as you go. Summary at the end.</div></div>
+  </div>
+  <div class="g g3">
+    <button type="button" disabled>Presets<br><span style="font-weight:400;font-size:9px">later</span></button>
+    <button type="button" disabled>Custom<br><span style="font-weight:400;font-size:9px">later</span></button>
+    <button type="button" disabled>EMOM<br><span style="font-weight:400;font-size:9px">later</span></button>
+  </div>
+  <div class="ucard" id="uLast" style="overflow:hidden;display:none">
+    <div style="display:flex;justify-content:space-between;padding:10px 12px;border-bottom:2px solid var(--ink)"><span class="lab">Last workout</span><span class="lab" id="uLastWhen"></span></div>
+    <div class="hud" style="border:0;border-radius:0;grid-template-columns:repeat(3,minmax(0,1fr))"><div><i>KG</i><b id="uLastKg"></b></div><div><i>REPS</i><b id="uLastReps"></b></div><div><i>SETS</i><b id="uLastSets"></b></div></div>
+    <div class="strip" id="uLastStrip" style="padding:0 12px 8px;flex-wrap:nowrap"></div>
+    <div style="font-size:10px;color:var(--umut);padding:0 12px 12px" id="uLastTxt"></div>
+  </div>
+  <div class="sp"></div>
+  <div class="g g2"><button type="button" id="uHistory">History</button><button class="dark" type="button" id="uDiag">Diagnostics</button></div>
+</section>
+
+<section class="scr" id="uSetup">
+  <div class="top"><button class="lnk" type="button" id="uCancel">‹ Cancel</button><b id="uSetupTitle">SET 01</b><span class="lab" id="uSetupClock">00:00</span></div>
+  <div class="lab">Movement</div>
+  <div class="g g2" id="uMv">
+    <button class="mvb" type="button" data-mv="swing"><span class="dot"></span>Swings</button>
+    <button class="mvb" type="button" data-mv="clean"><span class="sq"></span>Cleans</button>
+    <button class="mvb" type="button" data-mv="press"><svg width="16" height="15" viewBox="0 0 16 15" aria-hidden="true"><path d="M8 1.5 L14.5 13.5 L1.5 13.5 Z" fill="#2fd08a" stroke="#141414" stroke-width="2" stroke-linejoin="round"/></svg>Press</button>
+    <button class="mvb" type="button" data-mv="auto"><svg width="40" height="14" viewBox="0 0 40 14" aria-hidden="true"><circle cx="7" cy="7" r="5.5" fill="#ff4b12" stroke="#141414" stroke-width="2"/><rect x="15" y="1.5" width="11" height="11" rx="2.5" fill="#4db6ff" stroke="#141414" stroke-width="2"/><path d="M34 1.5 L39 12.5 L29 12.5 Z" fill="#2fd08a" stroke="#141414" stroke-width="2" stroke-linejoin="round"/></svg><span style="display:flex;flex-direction:column;line-height:1.1">Auto<span style="font-size:8px;font-weight:400">trial</span></span></button>
+  </div>
+  <div style="display:flex;justify-content:space-between"><span class="lab">Bell</span><span class="lab">kg · kept for the next set</span></div>
+  <div class="g g4" id="uKg"></div>
+  <div class="lab">Hand</div>
+  <div class="g g3" id="uHand"><button type="button" data-h="L">Left</button><button type="button" data-h="R">Right</button><button type="button" data-h="Both">Both</button></div>
+  <div style="border-top:2px solid var(--uline);padding-top:10px;font-size:11px;line-height:1.5;color:var(--umut)" id="uTip"></div>
+  <div class="sp"></div>
+  <div style="display:flex;align-items:center;gap:14px"><button class="go" type="button" id="uGo">START</button><span class="lab" id="uSetupSum"></span></div>
+</section>
+
+<section class="scr" id="uSet">
+  <div class="top"><b id="uSetLabel" style="display:flex;align-items:center;gap:8px"></b><b id="uSetClock" style="font-size:13px">00:00</b></div>
+  <div class="warnc" id="uSetWarn"></div>
+  <div id="uSingle" style="display:flex;align-items:flex-end;justify-content:space-between;padding:0 2px">
+    <div class="bigc" id="uBig">00</div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;padding-bottom:8px"><span class="lab" id="uBigLab">REPS</span><span class="chip" id="uShort" style="display:none"></span></div>
+  </div>
+  <div id="uAuto" style="display:none;flex-direction:column;gap:8px">
+    <div style="display:flex;gap:6px;align-items:center"><span style="font-size:10px;font-weight:700;letter-spacing:.08em;background:var(--ye);border:2px solid var(--ink);border-radius:6px;padding:2px 8px">TRIAL</span><span class="lab">Live, a few seconds behind · exact at rest</span></div>
+    <div class="hud" style="grid-template-columns:repeat(3,minmax(0,1fr));border-radius:12px">
+      <div><i>● SWINGS</i><b style="font-size:46px;line-height:1" id="uASw">00</b></div>
+      <div><i>■ CLEANS</i><b style="font-size:46px;line-height:1" id="uACl">00</b></div>
+      <div><i>▲ PRESSES</i><b style="font-size:46px;line-height:1" id="uAPr">00</b></div>
+    </div>
+  </div>
+  <div id="uVizSlot"></div>
+  <div class="ucard vizc" id="uPressCard" style="display:none">
+    <div class="vh"><span>PRESS BARS</span><button type="button" class="uTone">TONE: ON</button></div>
+    <canvas id="uPressCv"></canvas>
+    <div class="unote">One bar per press, same scale. Each press appears about 3 s after you finish it; short presses are marked when you rest.</div>
+  </div>
+  <div class="ucard vizc" id="uFlowCard" style="display:none">
+    <div class="vh"><span>FLOW</span><button type="button" class="uTone">TONE: ON</button></div>
+    <div class="flow" id="uFlow"></div>
+    <div class="unote">Every rep in the order it was counted: ● swing ■ clean ▲ press. Re-checked when you rest.</div>
+  </div>
+  <div class="hud" id="uSetHud"></div>
+  <div class="sp"></div>
+  <div style="display:flex;gap:12px"><button class="restb" type="button" id="uRest">REST</button><button class="endb" type="button" id="uEndSet">END</button></div>
+</section>
+
+<section class="scr" id="uRestS">
+  <div class="top"><b id="uRestTop">WORKOUT · 1 SET</b><b id="uRestClock" style="font-size:13px">00:00</b></div>
+  <div class="restpanel"><span style="font-size:12px;font-weight:700;letter-spacing:.12em">REST</span><b id="uRestTime">0:00</b></div>
+  <div class="ucard" style="overflow:hidden">
+    <div style="display:flex;justify-content:space-between;padding:10px 12px;border-bottom:2px solid var(--ink)"><span style="font-size:10px;letter-spacing:.1em;font-weight:700" id="uDoneTitle">SET 01 DONE</span><span class="lab" id="uDoneSub"></span></div>
+    <div class="hud" id="uDoneHud" style="border:0;border-radius:0;grid-template-columns:repeat(4,minmax(0,1fr))"></div>
+    <div class="strip" id="uDoneStrip" style="padding:4px 12px 10px"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:0 12px 4px"><span class="lab" id="uDoneShort"></span><button class="lnk" type="button" id="uFixOpen">Count wrong? Fix ›</button></div>
+    <div class="fix" id="uFixRow"><span class="lab" style="flex:1">Actual count</span><button type="button" id="uFixMinus" aria-label="One fewer">−</button><b id="uFixVal">0</b><button type="button" id="uFixPlus" aria-label="One more">+</button></div>
+  </div>
+  <div class="ucard" style="padding:10px 12px;display:flex;align-items:center;gap:10px">
+    <div style="flex:1"><div class="lab">Next set</div><div style="font-size:13px;font-weight:700" id="uNextTxt"></div></div>
+    <button type="button" id="uChange">Change</button>
+  </div>
+  <div class="sp"></div>
+  <div style="display:flex;align-items:center;gap:14px"><button class="go" type="button" id="uRestGo">SET 02</button><span class="lab" style="flex:1">Start next set</span><button class="endb" type="button" id="uRestEnd">End<br>workout</button></div>
+</section>
+
+<section class="scr" id="uSum">
+  <div class="top" style="justify-content:flex-start;gap:10px"><span class="dot"></span><b style="font-size:16px">WORKOUT DONE</b></div>
+  <div class="lab" id="uSumWhen"></div>
+  <div style="background:var(--or);border:2px solid var(--ink);border-radius:12px;padding:12px 16px;display:flex;align-items:flex-end;justify-content:space-between">
+    <span style="font-size:11px;font-weight:700;letter-spacing:.12em;padding-bottom:8px">TOTAL KG</span><b style="font-size:68px;line-height:1;letter-spacing:-.03em" id="uSumKg">0</b>
+  </div>
+  <div class="g" id="uSumCards"></div>
+  <div class="ucard" style="padding:6px 12px"><table id="uSumTable"></table><div class="lab" style="font-size:9px;padding:2px 0 4px" id="uSumFoot"></div></div>
+  <div class="sp"></div>
+  <div class="g g2"><button type="button" id="uExport" style="min-height:52px;font-size:13px">Export</button><button type="button" id="uDone" style="min-height:52px;font-size:13px;background:var(--or)">Done</button></div>
+</section>
+</div>
+<div id="uToast" role="status"></div>
+
+<!-- ================= DIAGNOSTIC / TRAINING VIEW ================= -->
+<div id="diag">
 <h1>Kettlebell Tracker</h1>
 <div class="warn-box" id="warn">Web Bluetooth isn't available in this browser. Use Chrome on Android or macOS (iPhone needs the Bluefy browser).</div>
 
@@ -81,6 +257,7 @@
   <button id="btnCsv">Export reps CSV</button>
   <button id="btnRawCsv">Export raw CSV</button>
   <button id="btnSim">Simulate</button>
+  <button id="btnUserView">User view</button>
 </div>
 <div class="status" id="status">Not connected</div>
 <div class="rawinfo" id="rawInfo">Raw stream off</div>
@@ -164,6 +341,7 @@
   </table>
   </div>
 </div>
+</div><!-- /diag -->
 
 <script>
 const SVC = '4b420001-7a6c-4f10-9d3e-2b1c5a6e8f01';
@@ -569,7 +747,7 @@ const LIVE_HOLD = 3;   // a live count must hold for 3 updates (1.5 s) before it
 function updatePressLive() {
   if (phase !== 'work' || moveOf(curSet) !== 'press') return;
   if (pressLive.set !== curSet) pressLive = { set: curSet, hist: [], n: 0 };
-  pressLive.hist.push(OHP.liveReps(pressSamples(curSet)).reps.length);
+  const lr = OHP.liveReps(pressSamples(curSet)); pressLive.hist.push(lr.reps.length); pressLive.rises = lr.reps.map(r => r.rise);   // heights feed the user view's press bars
   if (pressLive.hist.length > LIVE_HOLD) pressLive.hist.shift();
   if (pressLive.hist.length === LIVE_HOLD) pressLive.n = Math.max(pressLive.n, Math.min(...pressLive.hist));
 }
@@ -645,6 +823,7 @@ function setPhase(p) {
   const open = phases[phases.length - 1];
   if (open && open.t1 == null) open.t1 = now;
   if (phase === 'work' && p !== 'work') { finalizePress(curSet); finalizeAuto(curSet); }   // exact counts once the set ends
+  if (phase === 'work' && p !== 'work' && moveOf(curSet) === 'clean' && cleanFast.set === curSet) setMeta[curSet].cleanLive = { n: cleanFast.n, times: cleanFast.times.slice() };   // fallback for the user view if the set has no raw data
   if (p === 'work') { curSet++; cleanFast.set = 0; setMeta[curSet] = { movement: $('move').value, kg: kgValue() || null, trueReps: null }; if (moveOf(curSet) === 'swing') { SWINGVIZ.reset(true); TONE.ensure(); } if (moveOf(curSet) === 'clean') { CLEANVIZ.reset(); vizCleanSeen = { set: curSet, n: 0, t: -1e9, caught: false }; TONE.ensure(); } }
   phase = p; phaseStart = now;
   if (p !== 'idle') phases.push({ phase: p, set: curSet, t0: now, t1: null });
@@ -780,6 +959,10 @@ const TONE = (() => {
       if (short) { blip(110, 'sine', 0.2, 0.4); return; }
       const f = VIZ_NOTES[(n - 1) % 10]; blip(f, 'triangle', 0.32, 0.34); blip(f / 2, 'sine', 0.4, 0.22);
       if (n % 10 === 0) [523.25, 659.25, 783.99, 1046.5].forEach((q, i) => blip(q, 'triangle', 0.45, 0.26, 0.12 + i * 0.07));
+    },
+    press(n) {               // a press is counted (about 3 s after lockout): a soft high note (wraps every 5); a chime on every 5th
+      const f = [523.25, 587.33, 659.25, 783.99, 880][(n - 1) % 5]; blip(f, 'sine', 0.55, 0.3); blip(f * 2, 'triangle', 0.25, 0.09);
+      if (n % 5 === 0) [523.25, 659.25, 783.99, 1046.5].forEach((q, i) => blip(q, 'triangle', 0.45, 0.26, 0.12 + i * 0.07));
     },
     clean(n) {               // a clean lands in the rack: a low thump plus a rising note (wraps every 5); a chime on every 5th
       const f = [196, 220, 261.63, 293.66, 329.63][(n - 1) % 5]; blip(75, 'sine', 0.28, 0.55); blip(f, 'triangle', 0.4, 0.32);
@@ -1019,8 +1202,9 @@ $('btnCsv').onclick = () => {
       movement: 'press', set_mode: 'press', press_height_cm: (r.rise * 100).toFixed(0), short_rep: r.short ? 1 : 0,
       your_count: m.trueReps != null ? m.trueReps : '', set_description: setDesc(s), ...capCols() }));
   });
+  rows.forEach(r => { const m = setMeta[r.set] || {}; r.hand = m.hand || ''; r.workout_id = m.workout || ''; });   // set by the user view
   download(fname('reps'), csv(rows, ['time', 'phase', 'set', 'rep_in_set', 'counted', 'full_swing', 'device_set', 'device_total', 'peak_g', 'interval_ms',
-    'gyro_peak_dps', 'sweep_deg', 'gyro_launch_dps', 'bell_kg', 'radius_measured_m', 'radius_used_m', 'speed_ms', 'energy_j', 'power_w', 'movement', 'set_mode', 'press_height_cm', 'float_depth_g', 'short_rep', 'your_count', 'set_description', 'session_name', 'description']));
+    'gyro_peak_dps', 'sweep_deg', 'gyro_launch_dps', 'bell_kg', 'radius_measured_m', 'radius_used_m', 'speed_ms', 'energy_j', 'power_w', 'movement', 'set_mode', 'press_height_cm', 'float_depth_g', 'short_rep', 'your_count', 'hand', 'workout_id', 'set_description', 'session_name', 'description']));
 };
 $('btnRawCsv').onclick = () => {
   if (!raw.length) { setStatus('No raw data yet - press Start set while connected'); return; }
@@ -1117,6 +1301,7 @@ function render() {
       return `<tr><td>${s}</td><td>${MOVE_LABEL.press} ${kgForSet(s) || ''}${kgForSet(s) ? ' kg' : ''}</td><td>${pcs == null ? '–' : pcs}${pss ? ` <span style="color:#ffb020">(${pss} short)</span>` : ''}</td><td>–</td><td>–</td><td>–</td><td>–</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td>${mine}</tr>`; }
     return `<tr><td>${s}</td><td>${MOVE_LABEL[moveOf(s)]} ${kgForSet(s) || ''}${kgForSet(s) ? ' kg' : ''}</td><td>${a.length}${sh ? ` <span style="color:#ffb020">(${sh} short)</span>` : ''}</td><td>${fmt(mean(a.filter(r => r.interval).map(r => r.interval / 1000)))}</td><td>${fmt(mean(a.map(r => r.peak)))}</td><td>${fmt(pw, 0)}</td><td>${fmt(work, 2)}</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td>${mine}</tr>`;
   }).join('');
+  if (window.__uv) window.__uv.paint();
 }
 
 $('sets').addEventListener('input', e => {
@@ -1152,6 +1337,7 @@ setInterval(() => {
   if (phase === 'work' && autoLike(moveOf(curSet))) { updateAutoLive(); render(); }
   if (phase === 'rest') render(); // keeps the rest column ticking
   updateRawInfo();
+  if (window.__uv) { window.__uv.afterTick(); window.__uv.tick(); }
 }, 500);
 
 // ---------- Simulator ----------
@@ -1189,6 +1375,325 @@ $('btnSim').onclick = () => {
 
 window.addEventListener('resize', render);
 updateButtons();
+// =====================================================================================================
+// ---------- USER VIEW (16 Nov) ----------
+// A product-style layer over the same page: it drives the existing connect, Start set / Rest / Stop, per-set
+// movement and bell weight, and reads the same counters (Nano swing reps, live clean count, live press count,
+// Auto labeller). Nothing here changes a count. The diagnostic view (#diag) is the original page, untouched.
+// Choice of view is remembered; #dev in the URL always opens the diagnostic view.
+// A workout = the sets between Start (Home) and End workout; each set carries hand and workout id (also in the reps CSV).
+// =====================================================================================================
+const UV = (() => {
+  const MVN = { swing: 'Swings', clean: 'Cleans', press: 'Press', auto: 'Auto' };
+  const MCOL = { swing: '#ff4b12', clean: '#4db6ff', press: '#2fd08a' };
+  const UNIT = { swing: 'REPS', clean: 'CLEANS', press: 'PRESSES' };
+  const KGS = [8, 12, 16, 20, 24, 28, 32];
+  const TIPS = {
+    swing: 'Swings: start with the bell on the floor in front of you. A rep counts as the bell floats at the top.',
+    clean: 'Cleans: each clean counts as the bell lands in the rack, under a second after the pull.',
+    press: 'Press: clean the bell to the rack first. Each press appears about 3 seconds after you finish it.',
+    auto: 'Auto (trial): swings, cleans and presses in any order. Counts land a few seconds behind and are exact when you rest.'
+  };
+  const pad = n => String(Math.max(0, n | 0)).padStart(2, '0');
+  const clock = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return pad(Math.floor(s / 60)) + ':' + pad(s % 60); };
+  const store = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+  const load = k => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } };
+  const shapeIcon = m => m === 'swing' ? '<span class="dot"></span>' : m === 'clean' ? '<span class="sq"></span>' : m === 'press' ? '<span style="color:#2fd08a;-webkit-text-stroke:1px #141414">▲</span>' : '';
+  const glyph = { swing: '● ', clean: '■ ', press: '▲ ' };
+  const handTxt = h => h === 'Both' ? 'BOTH' : (h || 'R');
+
+  let view = load('kbu_view') || 'user';
+  if (location.hash === '#dev') view = 'diag';
+  let scr = 'home', W = load('kbu_workout'), fixSet = 0;
+  let next = load('kbu_next') || { mv: $('move').value, kg: kgValue() || 16, hand: 'R' };
+  if (!MVN[next.mv]) next.mv = 'swing';
+  let seen = { set: 0, swing: 0, clean: 0, press: 0, seq: [] };   // live counts already announced (tone, flow strip)
+
+  const live = () => connected() || !!simTimer;
+  let toastT = 0;
+  function toast(m) { const t = $('uToast'); t.textContent = m; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 3400); }
+
+  // ---------- counts for one set, whatever its movement (live while it runs, final once it has ended) ----------
+  function counts(s) {
+    const m = setMeta[s] || {}, mv = moveOf(s);
+    const o = { mv, swing: 0, clean: 0, press: 0, shSw: 0, shPr: 0, t: { swing: [], clean: [], press: [] }, bars: [], final: true, watts: NaN };
+    if (mv === 'swing') {
+      const a = reps.filter(r => r.counted && r.set === s);
+      o.swing = a.length; o.shSw = a.filter(isShort).length; o.t.swing = a.map(r => r.t); o.cols = a.map(r => isShort(r) ? null : VIZ_PAL[(r.repInSet - 1) % 5]);
+      const ps = a.map(r => calcMetrics(r, kgForSet(s))).filter(x => x && x.P != null).map(x => x.P);
+      o.watts = ps.length ? ps.reduce((x, y) => x + y, 0) / ps.length : NaN;
+      o.final = !(phase === 'work' && s === curSet);
+    } else if (mv === 'press') {
+      if (m.press) { o.press = m.press.reps.length; o.shPr = pressShort(s); o.t.press = m.press.reps.map(r => r.t); o.bars = m.press.reps.map(r => ({ rise: r.rise, short: r.short })); }
+      else if (s === pressLive.set) { o.press = pressLive.n; o.final = false; o.bars = (pressLive.rises || []).slice(0, pressLive.n).map(r => ({ rise: r })); }
+      else o.final = !(phase === 'work' && s === curSet);
+    } else if (mv === 'clean') {
+      if (m.auto) { o.clean = m.auto.cleans.length; o.t.clean = m.auto.cleans.map(r => r.t); }
+      else if (s === cleanFast.set && phase === 'work' && s === curSet) { o.clean = cleanFast.n; o.t.clean = cleanFast.times.slice(); o.final = false; }
+      else if (m.cleanLive) { o.clean = m.cleanLive.n; o.t.clean = m.cleanLive.times; }
+      else o.final = !(phase === 'work' && s === curSet);
+    } else {
+      const c = autoCounts(s);
+      if (c) { o.swing = c.swings; o.clean = c.cleans; o.press = c.presses; o.final = c.final; } else o.final = !(phase === 'work' && s === curSet);
+      if (m.auto) { o.shSw = autoShort(s); [['swing', 'swings'], ['clean', 'cleans'], ['press', 'presses']].forEach(([k, key]) => { o.t[k] = m.auto[key].map(r => r.t); }); }
+    }
+    o.total = o.swing + o.clean + o.press;
+    if (mv !== 'auto' && m.trueReps != null && o.final) { o.fixed = true; o[mv] = m.trueReps; o.total = m.trueReps; }
+    o.kg = o.total * (kgForSet(s) || 0);
+    return o;
+  }
+  const rpmOf = t => t.length >= 2 ? 60000 * (t.length - 1) / (t[t.length - 1] - t[0]) : NaN;
+  const r0 = v => isFinite(v) && v > 0 ? Math.round(v) : '--';
+
+  // ---------- view switch ----------
+  function setView(v) {
+    view = v; store('kbu_view', v);
+    document.body.classList.toggle('u', v === 'user');
+    $('uv').hidden = v !== 'user'; $('diag').hidden = v === 'user';
+    const card = $('vizCard');
+    if (v === 'user') $('uVizSlot').appendChild(card); else $('hint').after(card);
+    render();
+  }
+  $('uDiag').onclick = () => setView('diag');
+  $('btnUserView').onclick = () => setView('user');
+
+  // ---------- screens ----------
+  const SCR = { home: 'uHome', setup: 'uSetup', set: 'uSet', rest: 'uRestS', summary: 'uSum' };
+  function go(s) { scr = s; Object.keys(SCR).forEach(k => $(SCR[k]).classList.toggle('on', k === s)); window.scrollTo(0, 0); paint(); }
+
+  // ---------- home ----------
+  function paintHome() {
+    const ok = live(), bt = !!navigator.bluetooth;
+    $('uConnDot').style.background = ok ? '#2fd08a' : '#b9b6ae';
+    $('uConnTxt').textContent = ok ? (simTimer && !connected() ? 'Simulator running' : 'Connected') : bt ? 'Not connected' : 'Bluetooth not available';
+    $('uConnSub').textContent = bt ? 'Back face of the bell, USB at the top' : 'Use Chrome on Android or a computer (iPhone: Bluefy).';
+    $('uConn').textContent = connected() ? 'Disconnect' : 'Connect'; $('uConn').disabled = !bt;
+    $('uStartSub').textContent = ok ? 'Add sets as you go. Summary at the end.' : 'Connect the tracker first.';
+    const L = load('kbu_last');
+    $('uLast').style.display = L ? '' : 'none';
+    if (L) {
+      $('uLastWhen').textContent = L.when + ' · ' + L.mins + ' MIN';
+      $('uLastKg').textContent = L.kg; $('uLastReps').textContent = L.reps; $('uLastSets').textContent = pad(L.sets);
+      $('uLastStrip').innerHTML = Object.keys(L.by).filter(k => L.by[k]).map(k => `<span style="flex:${L.by[k]};background:${MCOL[k]}"></span>`).join('');
+      $('uLastTxt').textContent = Object.keys(L.by).filter(k => L.by[k]).map(k => glyph[k] + L.by[k] + ' ' + MVN[k].toLowerCase()).join('  ');
+    }
+  }
+  $('uConn').onclick = () => $('btnConnect').click();
+  $('uHistory').onclick = () => toast('History comes later. Your last workout shows on this screen.');
+  $('uStart').onclick = () => {
+    TONE.ensure();
+    if (!live()) { toast(navigator.bluetooth ? 'Connect the tracker first (Connect, above).' : 'Bluetooth is not available in this browser.'); return; }
+    if (phase !== 'idle') { setPhase('idle'); disableRaw(); }
+    W = { id: 'w' + new Date().toISOString().slice(0, 16).replace(/[-:T]/g, ''), start: Date.now(), first: curSet + 1 };
+    store('kbu_workout', W); go('setup');
+  };
+
+  // ---------- next set ----------
+  $('uKg').innerHTML = KGS.map(k => `<button class="kgb" type="button" data-kg="${k}">${k}</button>`).join('') + '<button class="kgb" type="button" id="uKgOther" style="font-size:11px">Other</button>';
+  function paintSetup() {
+    document.querySelectorAll('#uMv button').forEach(b => { b.classList.toggle('sel', b.dataset.mv === next.mv); b.setAttribute('aria-pressed', b.dataset.mv === next.mv); });
+    document.querySelectorAll('#uKg button[data-kg]').forEach(b => { b.classList.toggle('sel', +b.dataset.kg === next.kg); b.setAttribute('aria-pressed', +b.dataset.kg === next.kg); });
+    $('uKgOther').classList.toggle('sel', !KGS.includes(next.kg)); $('uKgOther').textContent = KGS.includes(next.kg) ? 'Other' : next.kg;
+    document.querySelectorAll('#uHand button').forEach(b => { b.classList.toggle('sel', b.dataset.h === next.hand); b.setAttribute('aria-pressed', b.dataset.h === next.hand); });
+    $('uTip').textContent = TIPS[next.mv];
+    $('uSetupTitle').textContent = 'SET ' + pad(setsDone() + 1);
+    $('uSetupSum').textContent = nextLabel();
+  }
+  const nextLabel = () => (MVN[next.mv] + ' · ' + next.kg + ' kg · ' + handTxt(next.hand)).toUpperCase();
+  document.querySelectorAll('#uMv button').forEach(b => b.onclick = () => { next.mv = b.dataset.mv; store('kbu_next', next); paintSetup(); });
+  document.querySelectorAll('#uKg button[data-kg]').forEach(b => b.onclick = () => { next.kg = +b.dataset.kg; store('kbu_next', next); paintSetup(); });
+  $('uKgOther').onclick = () => { const v = parseFloat(window.prompt ? prompt('Bell weight in kg', next.kg) : ''); if (v > 0 && v <= 100) { next.kg = v; store('kbu_next', next); paintSetup(); } };
+  document.querySelectorAll('#uHand button').forEach(b => b.onclick = () => { next.hand = b.dataset.h; store('kbu_next', next); paintSetup(); });
+  $('uCancel').onclick = () => { if (W && setsDone()) go('rest'); else { W = null; store('kbu_workout', null); go('home'); } };
+  $('uGo').onclick = startSet;
+  const wSets = () => W ? Object.keys(setMeta).map(Number).filter(s => s >= W.first && setMeta[s].workout === W.id).sort((a, b) => a - b) : [];
+  const setsDone = () => wSets().length;
+
+  function startSet() {
+    TONE.ensure();
+    if (!live()) { toast('The tracker is not connected. Connect it on the Home screen first.'); return; }
+    if (phase === 'work') return;
+    $('move').value = next.mv; try { localStorage.setItem('kb_move', next.mv); } catch (e) {}
+    $('kg').value = next.kg; try { localStorage.setItem('kb_kg', String(next.kg)); } catch (e) {}
+    setPhase('work');
+    setMeta[curSet].hand = next.hand; setMeta[curSet].workout = W.id; save();
+    seen = { set: curSet, swing: 0, clean: 0, press: 0, seq: [] };
+    enableRaw(); go('set');
+  }
+
+  // ---------- in a set ----------
+  function paintSet() {
+    const s = curSet, mv = moveOf(s), c = counts(s), auto = mv === 'auto';
+    $('uSetLabel').innerHTML = shapeIcon(mv) + ('SET ' + pad(setsDone()) + ' · ' + MVN[mv] + ' · ' + (kgForSet(s) || '?') + ' KG · ' + handTxt(setMeta[s] && setMeta[s].hand)).toUpperCase();
+    $('uSingle').style.display = auto ? 'none' : 'flex'; $('uAuto').style.display = auto ? 'flex' : 'none';
+    $('uPressCard').style.display = mv === 'press' ? '' : 'none'; $('uFlowCard').style.display = auto ? '' : 'none';
+    if (auto) {
+      $('uASw').textContent = pad(c.swing); $('uACl').textContent = pad(c.clean); $('uAPr').textContent = pad(c.press);
+      $('uSetHud').style.gridTemplateColumns = 'repeat(2,minmax(0,1fr))';
+      $('uSetHud').innerHTML = `<div><i>REPS</i><b>${pad(c.total)}</b></div><div><i>KG MOVED</i><b>${c.kg}</b></div>`;
+      $('uFlow').innerHTML = seen.seq.map(k => `<span class="${k === 'swing' ? 'fs' : k === 'clean' ? 'fc' : 'fp'}" title="${k}"></span>`).join('') || '<span class="lab" style="border:0;width:auto;height:auto">Waiting for the first rep…</span>';
+    } else {
+      $('uBig').textContent = pad(c[mv]); $('uBigLab').textContent = UNIT[mv];
+      const sh = mv === 'swing' ? c.shSw : 0;
+      $('uShort').style.display = sh ? '' : 'none'; $('uShort').textContent = sh + ' SHORT';
+      $('uSetHud').style.gridTemplateColumns = 'repeat(3,minmax(0,1fr))';
+      $('uSetHud').innerHTML = `<div><i>RPM</i><b>${r0(rpmOf(c.t[mv]))}</b></div><div><i>WATTS</i><b style="color:${mv === 'swing' ? '' : '#6b6860'}">${mv === 'swing' ? r0(c.watts) : '--'}</b></div><div><i>KG MOVED</i><b>${c.kg}</b></div>`;
+      if (mv === 'press') drawBars(c.bars);
+    }
+  }
+  function drawBars(bars) {
+    const cv = $('uPressCv'), dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight; if (!w || !h) return;
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.fillStyle = '#f5f4f0'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#d8d5cd'; for (let x = 11; x < w; x += 22) for (let y = 11; y < h; y += 22) g.fillRect(x - 1, y - 1, 2, 2);
+    const L = w * 0.04, R = w * 0.98, y0 = h * 0.86, y1 = h * 0.1, N = 10, gap = 6, bw = (R - L - (N - 1) * gap) / N;
+    const top = Math.max(0.9, ...bars.map(b => b.rise || 0)), list = bars.slice(-N), first = bars.length - list.length;
+    const rr = (x, y, ww, hh, r) => { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + ww, y, x + ww, y + hh, r); g.arcTo(x + ww, y + hh, x, y + hh, r); g.arcTo(x, y + hh, x, y, r); g.arcTo(x, y, x + ww, y, r); g.closePath(); };
+    g.strokeStyle = '#141414'; g.lineWidth = 2; g.beginPath(); g.moveTo(L - 4, y0); g.lineTo(R, y0); g.stroke();
+    for (let i = 0; i < N; i++) {
+      const x = L + i * (bw + gap), b = list[i];
+      rr(x, y1, bw, y0 - y1, 4); g.fillStyle = 'rgba(20,20,20,.04)'; g.fill();
+      if (!b) continue;
+      const hh = (y0 - y1) * Math.min(1, (b.rise || top * 0.7) / top); rr(x, y0 - hh, bw, hh, 4);
+      if (b.short) { g.fillStyle = '#f5f4f0'; g.fill(); g.setLineDash([4, 3]); g.strokeStyle = '#6b6860'; g.lineWidth = 2; g.stroke(); g.setLineDash([]); }
+      else { g.fillStyle = VIZ_PAL[(first + i) % 5]; g.fill(); g.strokeStyle = '#141414'; g.lineWidth = 2; g.stroke(); }
+      g.font = '700 10px "Space Mono",ui-monospace,monospace'; g.textAlign = 'center'; g.fillStyle = '#141414'; g.fillText(String(first + i + 1), x + bw / 2, y0 + 14);
+    }
+    if (!bars.length) { g.font = '11px "Space Mono",ui-monospace,monospace'; g.textAlign = 'center'; g.fillStyle = '#6b6860'; g.fillText(phase === 'work' ? 'CLEAN TO THE RACK, THEN PRESS…' : '', w / 2, h * 0.5); }
+  }
+  $('uRest').onclick = () => { if (phase === 'work') setPhase('rest'); fixSet = curSet; go('rest'); };
+  $('uEndSet').onclick = endWorkout;
+
+  // ---------- rest ----------
+  function paintRest() {
+    const ws = wSets(), s = fixSet || ws[ws.length - 1];
+    $('uRestTop').textContent = 'WORKOUT · ' + ws.length + ' SET' + (ws.length === 1 ? '' : 'S');
+    $('uRestGo').textContent = 'SET ' + pad(ws.length + 1);
+    $('uNextTxt').textContent = nextLabel();
+    if (!s || !setMeta[s]) { $('uDoneTitle').textContent = 'NO SET YET'; $('uDoneHud').innerHTML = ''; $('uDoneStrip').innerHTML = ''; $('uFixOpen').style.display = 'none'; return; }
+    const c = counts(s), mv = c.mv, m = setMeta[s];
+    $('uDoneTitle').textContent = 'SET ' + pad(ws.indexOf(s) + 1) + ' DONE';
+    $('uDoneSub').textContent = (MVN[mv] + ' · ' + (kgForSet(s) || '?') + ' kg · ' + handTxt(m.hand)).toUpperCase();
+    if (mv === 'auto') {
+      $('uDoneHud').innerHTML = `<div><i>SWINGS</i><b>${c.swing}</b></div><div><i>CLEANS</i><b>${c.clean}</b></div><div><i>PRESSES</i><b>${c.press}</b></div><div><i>KG</i><b>${c.kg}</b></div>`;
+      const ev = []; ['swing', 'clean', 'press'].forEach(k => c.t[k].forEach(t => ev.push({ t, k })));
+      ev.sort((a, b) => a.t - b.t);
+      $('uDoneStrip').innerHTML = ev.map(e => `<span style="background:${MCOL[e.k]}"></span>`).join('');
+    } else {
+      $('uDoneHud').innerHTML = `<div><i>${UNIT[mv]}</i><b>${c[mv]}${c.fixed ? '<span style="font-size:10px">*</span>' : ''}</b></div><div><i>RPM</i><b>${r0(rpmOf(c.t[mv]))}</b></div><div><i>WATTS</i><b>${mv === 'swing' ? r0(c.watts) : '--'}</b></div><div><i>KG</i><b>${c.kg}</b></div>`;
+      const tiles = mv === 'swing' ? (c.cols || []).map(col => col ? `<span style="background:${col}"></span>` : '<span class="sh"></span>')
+        : mv === 'press' ? c.bars.map((b, i) => b.short ? '<span class="sh"></span>' : `<span style="background:${VIZ_PAL[i % 5]}"></span>`)
+        : c.t.clean.map((t, i) => `<span style="background:${VIZ_PAL[i % 5]}"></span>`);
+      $('uDoneStrip').innerHTML = tiles.join('');
+    }
+    const sh = c.shSw + c.shPr;
+    $('uDoneShort').textContent = (sh ? sh + ' short (dashed)' : '') + (c.fixed ? (sh ? ' · ' : '') + '* your count' : '') + (!c.final ? 'Checking the count…' : '');
+    $('uFixOpen').style.display = mv === 'auto' ? 'none' : '';
+    $('uFixVal').textContent = c[mv] || 0;
+  }
+  $('uFixOpen').onclick = () => $('uFixRow').classList.toggle('on');
+  function fix(d) {
+    const ws = wSets(), s = fixSet || ws[ws.length - 1]; if (!s || moveOf(s) === 'auto') return;
+    const c = counts(s), n = Math.max(0, (c[c.mv] || 0) + d);
+    setMeta[s].trueReps = n; save(); render(); $('uFixRow').classList.add('on');
+  }
+  $('uFixMinus').onclick = () => fix(-1); $('uFixPlus').onclick = () => fix(1);
+  $('uChange').onclick = () => go('setup');
+  $('uRestGo').onclick = startSet;
+  $('uRestEnd').onclick = endWorkout;
+
+  // ---------- summary ----------
+  function endWorkout() {
+    if (phase !== 'idle') { setPhase('idle'); disableRaw(); }
+    if (!W) { go('home'); return; }
+    W.end = Date.now(); store('kbu_workout', null);
+    paintSummary(); go('summary');
+  }
+  let lastSum = null;
+  function paintSummary() {
+    if (!W) return;
+    const ws = wSets(), by = {}, rows = []; let kg = 0, n = 0;
+    ws.forEach((s, i) => {
+      const c = counts(s), mvs = c.mv === 'auto' ? ['swing', 'clean', 'press'] : [c.mv];
+      mvs.forEach(k => {
+        const cnt = c[k]; if (c.mv === 'auto' && !cnt) return;
+        const b = by[k] = by[k] || { n: 0, kg: 0, rpmW: 0, rpmN: 0, wW: 0, wN: 0 };
+        const rpm = rpmOf(c.t[k]), kgk = cnt * (kgForSet(s) || 0);
+        b.n += cnt; b.kg += kgk; if (isFinite(rpm)) { b.rpmW += rpm * cnt; b.rpmN += cnt; }
+        if (k === 'swing' && c.mv === 'swing' && isFinite(c.watts)) { b.wW += c.watts * cnt; b.wN += cnt; }
+        kg += kgk; n += cnt;
+        rows.push({ set: i + 1, k, auto: c.mv === 'auto', hand: setMeta[s].hand, kg: kgForSet(s) || '?', n: cnt, sh: k === 'swing' ? c.shSw : k === 'press' ? c.shPr : 0,
+                    fixed: c.fixed, rpm, w: k === 'swing' && c.mv === 'swing' ? c.watts : NaN });
+      });
+    });
+    const end = W.end || Date.now(), d = new Date(W.start), when = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase();
+    $('uSumWhen').textContent = when + ' · ' + clock(end - W.start) + ' · ' + ws.length + ' SET' + (ws.length === 1 ? '' : 'S');
+    $('uSumKg').textContent = Math.round(kg);
+    const ks = ['swing', 'clean', 'press'].filter(k => by[k]);
+    $('uSumCards').style.gridTemplateColumns = `repeat(${Math.max(1, ks.length)},minmax(0,1fr))`;
+    $('uSumCards').innerHTML = ks.length ? ks.map(k => { const b = by[k]; return `<div class="ucard" style="padding:10px 12px;display:flex;flex-direction:column;gap:3px">
+      <span style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.06em">${shapeIcon(k)}${MVN[k].toUpperCase()}</span>
+      <b style="font-size:34px;line-height:1.05">${b.n}</b><span class="lab">${b.rpmN ? Math.round(b.rpmW / b.rpmN) : '--'} RPM</span>
+      <span class="lab" style="color:${b.wN ? '#141414' : ''};font-weight:${b.wN ? 700 : 400}">${b.wN ? Math.round(b.wW / b.wN) + ' W AVG' : 'POWER --'}</span><span class="lab">${Math.round(b.kg)} KG</span></div>`; }).join('')
+      : '<div class="lab">No reps recorded.</div>';
+    $('uSumTable').innerHTML = '<thead><tr><th>SET</th><th>MOVE</th><th>KG</th><th>REPS</th><th>RPM</th><th>W</th></tr></thead><tbody>' + rows.map(r =>
+      `<tr><td>${pad(r.set)}</td><td>${glyph[r.k]}${r.k.slice(0, 2).toUpperCase()}${r.auto ? '·A' : ''} ${r.hand === 'Both' ? 'B' : (r.hand || 'R')}</td><td>${r.kg}</td><td>${r.n}${r.sh || r.fixed ? '<span style="color:#6b6860">*</span>' : ''}</td><td>${r0(r.rpm)}</td><td style="color:${isFinite(r.w) ? '#141414' : '#6b6860'}">${r0(r.w)}</td></tr>`).join('') + '</tbody>';
+    const nsh = rows.reduce((a, r) => a + r.sh, 0);
+    $('uSumFoot').textContent = [nsh ? '* includes ' + nsh + ' short rep' + (nsh > 1 ? 's' : '') : '', rows.some(r => r.fixed) ? '* count corrected by you' : '', rows.some(r => r.auto) ? '·A = counted in Auto (trial)' : ''].filter(Boolean).join(' · ');
+    lastSum = { when, mins: Math.max(1, Math.round((end - W.start) / 60000)), kg: Math.round(kg), reps: n, sets: ws.length, by: Object.fromEntries(ks.map(k => [k, by[k].n])) };
+    if (ws.length && n) store('kbu_last', lastSum);
+  }
+  $('uExport').onclick = () => $('btnCsv').click();
+  $('uDone').onclick = () => { W = null; go('home'); };
+  document.querySelectorAll('#uv .uTone').forEach(b => b.onclick = () => { TONE.set(!TONE.on); paintTone(); });
+  function paintTone() {
+    document.querySelectorAll('#uv .uTone').forEach(b => { b.textContent = 'TONE: ' + (TONE.on ? 'ON' : 'OFF'); b.style.background = TONE.on ? '#ffc21a' : '#f5f4f0'; });
+    $('btnTone').textContent = 'Tone: ' + (TONE.on ? 'on' : 'off'); $('btnTone').classList.toggle('on', TONE.on);
+  }
+
+  // ---------- live tones for presses and Auto (swings and cleans already have theirs) ----------
+  function afterTick() {
+    if (phase !== 'work') return;
+    const s = curSet, mv = moveOf(s);
+    if (seen.set !== s) seen = { set: s, swing: 0, clean: 0, press: 0, seq: [] };
+    if (mv !== 'press' && mv !== 'auto') return;
+    const c = counts(s);
+    ['clean', 'press', 'swing'].forEach(k => {
+      if (mv === 'press' && k !== 'press') return;
+      while (seen[k] < c[k]) { seen[k]++; seen.seq.push(k); if (k === 'press') TONE.press(seen[k]); else if (k === 'clean') TONE.clean(seen[k]); else TONE.rep(seen[k], false); vizLast = { t: Date.now(), col: MCOL[k] }; }
+    });
+  }
+
+  // ---------- painting ----------
+  function paint() {
+    if (view !== 'user') return;
+    if (scr === 'home') paintHome();
+    else if (scr === 'setup') paintSetup();
+    else if (scr === 'set') { if (phase === 'work') paintSet(); else go('rest'); }
+    else if (scr === 'rest') paintRest();
+    paintTone();
+  }
+  function tick() {
+    if (view !== 'user') return;
+    const now = Date.now();
+    if (scr === 'home') paintHome();
+    if (scr === 'setup') $('uSetupClock').textContent = W ? clock(now - W.start) : '00:00';
+    if (scr === 'set') {
+      $('uSetClock').textContent = clock(now - phaseStart);
+      const w = $('uSetWarn'); const lost = !live(), slow = rawRate() && rawRate() < 40 && moveOf(curSet) !== 'swing';
+      w.style.display = lost || slow ? 'block' : 'none';
+      w.textContent = lost ? 'Tracker disconnected. Reconnect from Home; this set keeps what it has counted.' : 'Raw stream below 40 Hz, counts may be off.';
+    }
+    if (scr === 'rest') { $('uRestTime').textContent = phase === 'rest' ? mmss(now - phaseStart) : '–'; $('uRestClock').textContent = W ? clock(now - W.start) : ''; }
+  }
+
+  // ---------- start-up ----------
+  if (W && !W.end) { scr = setsDone() ? 'rest' : 'setup'; }
+  setView(view); go(scr);
+  return { paint, tick, afterTick, go, get view() { return view; }, get scr() { return scr; }, counts, get W() { return W; } };
+})();
+window.__uv = UV;
 render();
 </script>
 </body>

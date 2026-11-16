@@ -3,7 +3,7 @@ const { chromium } = require('playwright'); const fs = require('fs');
 (async () => {
   const b = await chromium.launch(); const page = await (await b.newContext({ viewport: { width: 390, height: 900 } })).newPage();
   const errs = []; page.on('pageerror', e => errs.push(e.message));
-  await page.goto('file://' + process.cwd() + '/index.html'); await page.evaluate(() => localStorage.clear()); await page.reload();
+  await page.goto('file://' + process.cwd() + '/index.html#dev'); await page.evaluate(() => localStorage.clear()); await page.reload();
   await page.evaluate(() => { window.__dl = []; download = (n, t) => window.__dl.push({ n, t }); });
   const reps = JSON.parse(fs.readFileSync('data/replays/reps4_hex.json', 'utf8'));
   const feedRep = a => page.evaluate(h => h.forEach(x => { const u = new Uint8Array(x.match(/../g).map(c => parseInt(c, 16))); onRep(new DataView(u.buffer)); }), a);

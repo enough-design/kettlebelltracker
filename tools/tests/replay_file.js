@@ -4,7 +4,7 @@ const [h, ...L] = fs.readFileSync('data/raw/' + f, 'utf8').trim().split('\n'); c
 const rows = L.map(l => l.split(',')).map(c => ({ t: +c[ix('t_epoch_ms')], ms: +c[ix('ms')], phase: c[ix('phase')], set: +c[ix('set')], ax: +c[ix('ax')], ay: +c[ix('ay')], az: +c[ix('az')], gx: +c[ix('gx')], gy: +c[ix('gy')], gz: +c[ix('gz')] }));
 (async () => {
   const b = await chromium.launch(); const page = await (await b.newContext()).newPage();
-  await page.goto('file://' + process.cwd() + '/index.html');
+  await page.goto('file://' + process.cwd() + '/index.html#dev');
   for (const [s, truth] of Object.entries(TRUTH)) {
     const work = rows.filter(r => r.set === +s && r.phase === 'work');
     const res = await page.evaluate(({ work }) => {

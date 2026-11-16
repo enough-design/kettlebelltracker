@@ -1,6 +1,6 @@
 const { chromium } = require('playwright'); const fs = require('fs'); const S = process.argv[2];
 async function run(page, hexfile, sizes, kg) {
-  await page.goto('file://'+process.cwd()+'/index.html'); await page.evaluate(() => localStorage.clear()); await page.reload();
+  await page.goto('file://'+process.cwd()+'/index.html#dev'); await page.evaluate(() => localStorage.clear()); await page.reload();
   await page.fill('#kg', String(kg));
   const reps = JSON.parse(fs.readFileSync(`${S}/${hexfile}`, 'utf8')); let o = 0;
   const feed = a => page.evaluate(h => h.forEach(x => { const u = new Uint8Array(x.match(/../g).map(c => parseInt(c, 16))); onRep(new DataView(u.buffer)); }), a);

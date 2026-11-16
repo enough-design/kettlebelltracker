@@ -23,7 +23,7 @@ function load(f) {
 }
 (async () => {
   const b = await chromium.launch(); const page = await (await b.newContext()).newPage(); const errs = []; page.on('pageerror', e => errs.push(e.message));
-  await page.goto('file://' + process.cwd() + '/index.html'); let bad = 0, firstBad = 0;
+  await page.goto('file://' + process.cwd() + '/index.html#dev'); let bad = 0, firstBad = 0;
   const cache = {};
   for (const [f, s, want, mount] of CASES) {
     const rows = cache[f] || (cache[f] = load(f)); const work = rows.filter(r => r.set === s && r.phase === 'work');
