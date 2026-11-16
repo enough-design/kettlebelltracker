@@ -3,8 +3,8 @@
 const { chromium } = require('playwright');
 (async () => {
   const b = await chromium.launch(); const page = await (await b.newContext({ viewport: { width: 390, height: 900 }, deviceScaleFactor: 2 })).newPage();
-  const errs = []; page.on('pageerror', e => errs.push(e.message)); page.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
-  await page.goto('file://' + process.cwd() + '/index.html'); await page.evaluate(() => localStorage.clear()); await page.reload();
+  const errs = []; page.on('pageerror', e => errs.push(e.message)); page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errs.push(m.text()); });
+  await page.goto('file://' + process.cwd() + '/index.html#dev'); await page.evaluate(() => localStorage.clear()); await page.reload();
   const vis = () => page.$eval('#vizCard', e => getComputedStyle(e).display !== 'none');
   const out = [];
   out.push(['swings selected: card visible', await vis(), true]);

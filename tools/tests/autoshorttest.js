@@ -11,7 +11,7 @@ function parse(f) { const [h, ...L] = fs.readFileSync('data/raw/' + f, 'utf8').t
   return L.map(l => l.split(',')).map(c => ({ t: +c[ix('t_epoch_ms')], ms: +c[ix('ms')], phase: c[ix('phase')], set: +c[ix('set')], ax: +c[ix('ax')], ay: +c[ix('ay')], az: +c[ix('az')], gx: +c[ix('gx')], gy: +c[ix('gy')], gz: +c[ix('gz')] })); }
 (async () => {
   const b = await chromium.launch(); const pg = await b.newPage(); const errs = []; pg.on('pageerror', e => errs.push(e.message));
-  await pg.goto('file://' + process.cwd() + '/index.html'); let bad = 0, firstBad = 0;
+  await pg.goto('file://' + process.cwd() + '/index.html#dev'); let bad = 0, firstBad = 0;
   for (const [f, ...sets] of CASES) { const rows = parse(f);
     for (const [s, tr, mount] of sets) {
       const work = rows.filter(r => r.set === s && r.phase === 'work');

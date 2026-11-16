@@ -22,7 +22,7 @@ function parse(f) {
 (async () => {
   const b = await chromium.launch(); const page = await (await b.newContext({ viewport: { width: 390, height: 900 } })).newPage();
   const errs = []; page.on('pageerror', e => errs.push(e.message));
-  await page.goto('file://' + process.cwd() + '/index.html'); await page.evaluate(() => localStorage.clear()); await page.reload();
+  await page.goto('file://' + process.cwd() + '/index.html#dev'); await page.evaluate(() => localStorage.clear()); await page.reload();
   let ok = 0, tot = 0, liveOk = 0;
   for (const [f, sets] of Object.entries(TRUTH)) {
     const rows = parse(f);

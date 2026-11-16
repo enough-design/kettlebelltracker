@@ -12,7 +12,7 @@ function parse(f) {
 (async () => {
   const b = await chromium.launch(); const page = await (await b.newContext({ viewport: { width: 390, height: 900 }, deviceScaleFactor: 2 })).newPage();
   const errs = []; page.on('pageerror', e => errs.push(e.message));
-  await page.goto('file://' + process.cwd() + '/index.html'); await page.evaluate(() => localStorage.clear()); await page.reload();
+  await page.goto('file://' + process.cwd() + '/index.html#dev'); await page.evaluate(() => localStorage.clear()); await page.reload();
   let fail = 0; const ck = (ok, msg) => { if (!ok) { fail++; console.log('  FAIL: ' + msg); } };
   const vis = () => page.$eval('#vizCard', e => getComputedStyle(e).display !== 'none');
   const title = () => page.$eval('#vizTitle', e => e.textContent);
