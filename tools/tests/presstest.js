@@ -12,6 +12,7 @@ const TRUTH = {   // file: {set: truth}
   'kb_raw_20kg-ohp-push-rh_2026-11-13-14-55-29.csv': { 1: 8, 2: 8, 3: 4 },
   'kb_raw_12kg-ohp_2026-11-13-15-23-02.csv': { 1: 8, 2: 8, 4: 4, 5: 4 },   // set 3 unscored (4 or 5)
   'kb_raw_12kg-ohp_2026-11-13-15-44-05.csv': { 1: 8, 2: 6, 3: 4, 4: 4 },
+  'kb_raw_12kg-press-test_2026-11-16-11-02-22.csv': { 1: 10, 2: 10, 3: 10 },   // varied pace, very slow lowering in sets 2 and 3
 };
 function parse(f) {
   const [h, ...L] = fs.readFileSync('data/raw/' + f, 'utf8').trim().split('\n'); const H = h.split(',');
@@ -28,12 +29,13 @@ function parse(f) {
     const rows = parse(f);
     for (const [s, truth] of Object.entries(sets)) {
       const work = rows.filter(r => r.set === +s && r.phase === 'work');
-      const res = await page.evaluate(({ work }) => {
+      for (const OFF of (process.env.OFFS || '0').split(',').map(Number)) {
+      const res = await page.evaluate(({ work, OFF }) => {
         reps = []; raw = []; phases = []; setMeta = {}; curSet = 0; phase = 'idle'; pressLive = { set: 0, hist: [], n: 0 };
         $('move').value = 'press'; setPhase('work');
         const seen = [], inc = [];
-        for (let i = 0; i < work.length; i += 12) {           // feed about 0.25 s at a time, like the page's press timer
-          work.slice(i, i + 12).forEach(r => raw.push({ ...r, phase: 'work', set: curSet }));
+        for (let i = OFF; i < work.length; i += 12) {           // feed about 0.25 s at a time, like the page's press timer
+          work.slice(i === OFF ? 0 : i, i + 12).forEach(r => raw.push({ ...r, phase: 'work', set: curSet }));
           const n0 = pressLive.n; updatePressLive(); seen.push(pressLive.n);
           for (let c = n0; c < pressLive.n; c++) inc.push(raw[raw.length - 1].t);
         }
@@ -42,10 +44,11 @@ function parse(f) {
         setPhase('rest'); render();
         return { live, seen, lat: finT.map((t, i) => inc[i] != null ? (inc[i] - t) / 1000 : null).filter(v => v != null), over: Math.max(0, ...seen), final: pressCount(curSet), short: pressShort(curSet), card: $('repsInSet').textContent, note: $('repsShort').textContent,
                  row: [...document.querySelectorAll('#sets tr')].map(tr => tr.innerText.replace(/\s+/g, ' ')).pop() };
-      }, { work });
+      }, { work, OFF });
       tot++; ok += res.final === truth; liveOk += res.live === truth; lat.push(...res.lat); if (res.over > truth) phantom++;
       const drops = res.seen.filter((v, i) => i && v < res.seen[i - 1]).length;
       console.log(`${f.slice(7, 40).padEnd(34)} set ${s}: truth ${String(truth).padStart(2)}  live-at-end ${String(res.live).padStart(2)}  final ${String(res.final).padStart(2)} ${res.final === truth ? '' : '<-- MISS'}  short ${res.short}  drops ${drops}  card "${res.card}" "${res.note}"`);
+    }
     }
   }
   lat.sort((a, c) => a - c); const q = x => lat[Math.floor(x * (lat.length - 1))].toFixed(2);

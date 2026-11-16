@@ -565,7 +565,7 @@ const OHP = (() => {
   const FS = 50, CLEAN = 450, END_BURST = 250, PROM = 0.3, SHORT_FRAC = 0.8, LIVE_LAG = 0.5;
   // Press mode live count (16 Nov): humps older than 0.3 s, no put-down twist after the top; shown at once (no hold), updated every 0.25 s.
   // On the 31 press-mode sets: delay from lockout median 1.1 s (90%: 1.9 s; was 3.4 / 5.0 s), no phantom, live right at Rest on all 31.
-  const PRESS_LAG = 0.3, PUTDOWN_W = 0.5, PUTDOWN_G = 350;
+  const PRESS_LAG = 0.5, PUTDOWN_W = 0.5, PUTDOWN_PRE = 0.2, PUTDOWN_G = 350;   // lag = put-down window, so the window is always fully seen (16 Nov 11:02 set 2)
   const F = {
     LP: { sos: [[0.00034604133763910385, 0.0006920826752782077, 0.00034604133763910385, 1.0, -1.9466975407561833, 0.9480817061067397]], zi: [[0.9996539586623651, -0.9477356647691043]], pad: 9 },
     BP: { sos: [[0.044157196394093684, 0.08831439278818737, 0.044157196394093684, 1.0, -1.3309555967298963, 0.5095097187836408], [1.0, -2.0, 1.0, 1.0, -1.98226563125227, 0.9824297820610058]], zi: [[0.9450598742888766, -0.4598585151055635], [-0.9892170706829704, 0.9892170706829704]], pad: 15 },
@@ -669,19 +669,26 @@ const OHP = (() => {
       if (H[i].press && !H[i + 1].press && H[i + 1].t - H[i].t <= SWING_GAP && H[i + 1].pre < CLEAN) H[i].press = false;
     return { z, H };
   }
+  function nearPutDown(s, k) {   // a twist >= 350 dps from 0.2 s before to 0.5 s after a hump top: the bell being put down
+    for (let j = Math.max(0, k - PUTDOWN_PRE * FS); j <= Math.min(s.gm.length - 1, k + PUTDOWN_W * FS); j++) if (s.gm[j] >= PUTDOWN_G) return true;
+    return false;
+  }
   function finalReps(s) {
     if (s.ax.length < 4 * FS) return [];
     const { z, H } = classify(s, Infinity);
-    const p = H.filter(h => h.press).map(h => h.k), r = rise(z, p), sh = shortFlags(r);
+    // put-downs are dropped here too (16 Nov 11:02 set 3: a false hump just before an end-of-set put-down was an 11th press); the same
+    // put-down can hide a real press next to it in the whole-set trace, which the live count catches: finalizePress merges the two
+    const p = H.filter(h => h.press && !nearPutDown(s, h.k)).map(h => h.k), r = rise(z, p), sh = shortFlags(r);
     return p.map((k, i) => ({ k, t: s.t[k], rise: r[i], short: sh[i] }));
   }
   // Live (provisional) count: humps older than LIVE_LAG s; reports how many non-press humps (cleans, swings) have been seen
   function liveReps(s) {
     const n = s.ax.length; if (n < 4 * FS) return { other: 0, reps: [] };
     const { z, H } = classify(s, s.t[n - 1] - PRESS_LAG);
-    // a hump with a big twist (>= 350 dps) within 0.5 s after its top is the bell being put down, not a press (two end-of-set
+    // a hump with a big twist (>= 350 dps) from 0.2 s before to 0.5 s after its top is the bell being put down (the live trace can
+    // place the top just after the twist, 16 Nov 11:02 set 2), not a press (two end-of-set
     // put-downs showed for a moment as an extra press with the faster live count, 16 Nov); the final count already rejects them
-    const putDown = h => { for (let j = h.k + 1; j <= Math.min(n - 1, h.k + PUTDOWN_W * FS); j++) if (s.gm[j] >= PUTDOWN_G) return true; return false; };
+    const putDown = h => nearPutDown(s, h.k);
     const p = H.filter(h => h.press && !putDown(h)).map(h => h.k), r = rise(z, p);
     return { other: H.filter(h => !h.press).length, reps: p.map((k, i) => ({ k, t: s.t[k], rise: r[i] })) };
   }
@@ -754,14 +761,25 @@ const PRESS_HOLD = 1; // Press mode: shown at once (16 Nov; put-downs are filter
 function updatePressLive() {
   if (phase !== 'work' || moveOf(curSet) !== 'press') return;
   if (pressLive.set !== curSet) pressLive = { set: curSet, hist: [], n: 0 };
-  const lr = OHP.liveReps(pressSamples(curSet)); pressLive.hist.push(lr.reps.length); pressLive.rises = lr.reps.map(r => r.rise);   // heights feed the user view's press bars
+  const S = pressSamples(curSet), lr = OHP.liveReps(S); pressLive.hist.push(lr.reps.length); pressLive.rises = lr.reps.map(r => r.rise);   // heights feed the user view's press bars
   if (pressLive.hist.length > PRESS_HOLD) pressLive.hist.shift();
+  const n0 = pressLive.n;
   if (pressLive.hist.length === PRESS_HOLD) pressLive.n = Math.max(pressLive.n, Math.min(...pressLive.hist));
+  if (!pressLive.reps) pressLive.reps = [];
+  for (let i = n0; i < pressLive.n && i < lr.reps.length; i++) pressLive.reps.push({ t: S.epoch[lr.reps[i].k], rise: lr.reps[i].rise });   // what the live count showed, for the final merge
 }
 function finalizePress(set) {
   if (!set || moveOf(set) !== 'press') return;
   const s = pressSamples(set); if (!s.t.length) return;
   const reps = OHP.finalReps(s).map(r => ({ t: s.epoch[r.k], rise: r.rise, short: r.short }));
+  // final count = the larger of the whole-set count and the live count (neither has run above the truth on any labelled set; the live
+  // count catches a press the whole-set trace can lose next to a put-down, 16 Nov 11:02 set 2). Live press times drift up to about 1 s
+  // from the whole-set ones, so an extra press takes the live press furthest from every final press.
+  if (pressLive.set === set && pressLive.reps && pressLive.n > reps.length) {
+    const pool = pressLive.reps.map(l => ({ l, d: Math.min(...reps.map(r => Math.abs(r.t - l.t)), Infinity) })).sort((a, b) => b.d - a.d);
+    pool.slice(0, pressLive.n - reps.length).forEach(({ l }) => reps.push({ t: l.t, rise: l.rise, short: false, fromLive: true }));
+    reps.sort((a, b) => a.t - b.t);
+  }
   setMeta[set].press = { reps };
 }
 // ---- Auto mode: the page labels swings, cleans and presses itself ----
