@@ -28,6 +28,8 @@ function rowsOf(f, set) {
   await page.evaluate(() => $('btnSim').onclick());   // the page's simulator stands in for the Nano (swings and cleans)
   await page.waitForTimeout(600);
   ck((await txt('#uConnTxt')) === 'Simulator running', 'Home shows the simulator as the tracker');
+  await page.click('#uStyle [data-st="comic"]');
+  ck(await page.evaluate(() => $('uv').classList.contains('comic') && vizComic && $('uStart').textContent === 'START!' && localStorage.getItem('kbu_style') === '"comic"'), 'Comic look switches on, is remembered and draws comic visuals');
   await shot('1home');
 
   // ---- set 1: swings, 16 kg, left hand
@@ -39,6 +41,7 @@ function rowsOf(f, set) {
   const sw = await page.evaluate(() => ({ big: +$('uBig').textContent, page: reps.filter(r => r.counted && r.set === curSet).length, kg: setMeta[curSet].kg, hand: setMeta[curSet].hand, mv: setMeta[curSet].movement, hud: $('uSetHud').innerText }));
   ck(sw.big === sw.page && sw.page >= 4, `swing count matches the page (${sw.big})`);
   ck(sw.kg === 16 && sw.hand === 'L' && sw.mv === 'swing', 'set carries movement, 16 kg and hand L');
+  ck(await page.evaluate(() => setMeta[curSet].style === 'comic'), 'set records the look it was done in');
   ck(/RPM\s*\d+/.test(sw.hud) && /WATTS\s*\d+/.test(sw.hud) && new RegExp('KG MOVED\\s*' + sw.big * 16).test(sw.hud), 'swing HUD shows RPM, watts and kg moved');
   await shot('2swing');
   await page.click('#uRest'); ck(await vis('#uRestS') && (await page.evaluate(() => phase)) === 'rest', 'Rest opens the rest screen and the page is resting');
@@ -100,18 +103,23 @@ function rowsOf(f, set) {
   ck(sum.rows === 6 && sum.cards === 3, 'summary has 6 table rows (4 sets, Auto split in three) and 3 movement cards');
   ck(await page.evaluate(() => /W AVG/.test($('uSumCards').innerText)), 'swing card shows average watts');
   ck(sum.last && sum.last.sets === 4 && sum.last.kg === expKg, 'last workout saved for Home');
+  await page.click('#uFbBtns [data-p="comic"]'); await page.fill('#uFbTxt', 'Love the bursts, rest timer too small'); await page.click('#uSumKg');
+  const fb = await page.evaluate(() => ({ p: Object.values(setMeta).filter(m => m.lookPref === 'comic').length, c: Object.values(setMeta).filter(m => /bursts/.test(m.lookComment || '')).length, saved: $('uFbSaved').textContent, list: JSON.parse(localStorage.getItem('kbu_feedback') || '[]') }));
+  ck(fb.p === 4 && fb.c === 4 && /saved/i.test(fb.saved) && fb.list.length === 1 && fb.list[0].styles === 'comic', 'feedback saved on all 4 sets and in this browser');
   await shot('7summary');
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#uExport')]);
   const csvText = fs.readFileSync(await dl.path(), 'utf8'), head = csvText.split('\n')[0].split(','), lines = csvText.trim().split('\n').slice(1);
   const hi = head.indexOf('hand'), wi = head.indexOf('workout_id'), si = head.indexOf('set');
   ck(hi > 0 && wi > 0, 'reps CSV has hand and workout_id columns');
   ck(lines.some(l => l.split(',')[hi] === 'L') && lines.filter(l => /,w\d{12},/.test(l)).length >= 20, 'CSV rows carry the hand and the workout id');
+  ck(head.includes('style') && head.includes('look_pref') && head.includes('look_comment') && /,comic,comic,"?Love the bursts/.test(csvText), 'CSV carries the look and the feedback');
   await page.click('#uDone'); ck(await vis('#uHome') && await vis('#uLast'), 'Done returns Home with the last workout card');
   await shot('8home');
 
   // ---- view switch and #dev
   await page.click('#uDiag');
   ck(await vis('#btnStart') && !(await vis('#uHome')) && await page.evaluate(() => $('hint').nextElementSibling.id === 'vizCard'), 'Diagnostics opens the original page with the visual card back in place');
+  ck(await page.evaluate(() => !vizComic), 'diagnostic view draws in its own style');
   await page.click('#btnUserView'); ck(await vis('#uHome'), 'User view button switches back');
   await page.goto(url + '#dev'); await page.reload(); ck(await vis('#btnStart') && !(await vis('#uHome')), '#dev opens the diagnostic view');
   await page.evaluate(() => $('btnSim').onclick());

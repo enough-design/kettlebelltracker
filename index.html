@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kettlebell Tracker</title>
-<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bangers&family=Comic+Neue:wght@700&display=swap" rel="stylesheet">
 <style>
   :root { --bg:#0f1115; --card:#181b22; --fg:#eef0f4; --mut:#8b93a5; --acc:#ff6a2b; --ok:#3ddc97; --rest:#4aa8ff; --line:#2a2f3a; --pow:#f5c542; }
   * { box-sizing:border-box; }
@@ -133,6 +133,41 @@
   #uToast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); max-width:360px; width:calc(100% - 40px); background:#141414; color:#e8e6e0;
         border-radius:10px; padding:12px 14px; font:12px/1.45 "Space Mono",ui-monospace,monospace; opacity:0; pointer-events:none; transition:opacity .2s; z-index:9; }
   #uToast.show { opacity:1; }
+  /* ---------- User view, Comic style (16 Nov): same screens, restyled. Chosen on Home; remembered. ---------- */
+  #uv.comic { --paper:#fff3d6; --stage:#ffffff; --umut:#4a463e; --uline:#141414; --or:#e3242b; --ye:#ffd400; --bl:#00a8e8; --gr:#2fbf5f;
+        background:#fff3d6 radial-gradient(rgba(227,36,43,.15) 1.3px, transparent 1.6px) 0 0 / 9px 9px; font-family:"Comic Neue","Comic Sans MS",sans-serif; font-weight:700; }
+  #uv.comic .ucard, #uv.comic .hud, #uv.comic .viz, #uv.comic .restpanel { border-width:3px; border-radius:0; box-shadow:4px 4px 0 #141414; }
+  #uv.comic .hud > div { border-right-width:3px; }
+  #uv.comic .viz { background:#fff; font-family:"Comic Neue","Comic Sans MS",sans-serif; }
+  #uv.comic .viz .vt, #uv.comic .vizc .vh { font-family:Bangers,Impact,sans-serif; font-size:17px; font-weight:400; letter-spacing:.06em; }
+  #uv.comic .viz .vn, #uv.comic .unote { color:#4a463e; font-weight:700; }
+  #uv.comic button { font-family:Bangers,Impact,sans-serif; font-size:16px; font-weight:400; letter-spacing:.06em; border-width:3px; border-radius:0; box-shadow:3px 3px 0 #141414; }
+  #uv.comic button.kgb { font-size:19px; }
+  #uv.comic button:disabled { border:3px dashed #141414; }
+  #uv.comic button.lnk { font-size:15px; box-shadow:none; }
+  #uv.comic button.dark { box-shadow:3px 3px 0 #ff6a2b; }
+  #uv.comic .lab { color:#4a463e; font-weight:700; }
+  #uv.comic .top b { background:var(--ye); border:3px solid #141414; padding:2px 8px; font-family:"Comic Neue","Comic Sans MS",sans-serif; }
+  #uv.comic .bigc, #uv.comic .hud b, #uv.comic .restpanel b, #uv.comic #uSumKg { font-family:Bangers,Impact,sans-serif; font-weight:400; letter-spacing:.02em; }
+  #uv.comic .bigc { position:relative; z-index:0; margin:40px 0 18px 44px; color:#fff3d6; font-size:118px; line-height:.9;
+        text-shadow:4px 4px 0 #141414, -2px -2px 0 #141414, 2px -2px 0 #141414, -2px 2px 0 #141414; transform:rotate(-5deg); }
+  #uv.comic .bigc::before, #uv.comic .bigc::after { content:''; position:absolute; z-index:-1;
+        clip-path:polygon(50% 0,58% 13%,71% 6%,73% 21%,88% 19%,83% 34%,98% 39%,87% 50%,98% 61%,83% 66%,88% 81%,73% 79%,71% 94%,58% 87%,50% 100%,42% 87%,29% 94%,27% 79%,12% 81%,17% 66%,2% 61%,13% 50%,2% 39%,17% 34%,12% 19%,27% 21%,29% 6%,42% 13%); }
+  #uv.comic .bigc::after { inset:-34px -46px -30px -46px; background:#141414; z-index:-2; }
+  #uv.comic .bigc::before { inset:-28px -40px -24px -40px; background:var(--or); }
+  #uv.comic button.go { border:0; box-shadow:none; background:var(--or); color:var(--ye); font-size:22px; text-shadow:2px 2px 0 #141414; width:104px; height:104px;
+        clip-path:polygon(50% 0,58% 13%,71% 6%,73% 21%,88% 19%,83% 34%,98% 39%,87% 50%,98% 61%,83% 66%,88% 81%,73% 79%,71% 94%,58% 87%,50% 100%,42% 87%,29% 94%,27% 79%,12% 81%,17% 66%,2% 61%,13% 50%,2% 39%,17% 34%,12% 19%,27% 21%,29% 6%,42% 13%); }
+  #uv.comic button.go:disabled { background:#d6d3cb; color:#4a463e; text-shadow:none; }
+  #uv.comic button.restb { background:var(--bl); font-size:28px; border-radius:18px; box-shadow:4px 4px 0 #141414; }
+  #uv.comic .restpanel { background:var(--bl); }
+  #uv.comic .restpanel b { color:#fff3d6; font-size:88px; text-shadow:4px 4px 0 #141414, -2px -2px 0 #141414, 2px -2px 0 #141414, -2px 2px 0 #141414; }
+  #uv.comic .chip { border:3px dashed #141414; border-radius:0; background:#d6d3cb; }
+  #uv.comic .strip span { border-width:2px; border-radius:0; }
+  #uv.comic .dot, #uv.comic .sq { border-width:3px; }
+  #uv.comic #uSumKg { color:#ffd400; font-size:80px; text-shadow:3px 3px 0 #141414; }
+  #uv.comic th, #uv.comic td { border-bottom:2px solid #141414; }
+  #uv.comic textarea { border-radius:0; border-width:3px; font-family:"Comic Neue","Comic Sans MS",sans-serif; }
+  #uv textarea { width:100%; box-sizing:border-box; font:12px "Space Mono",ui-monospace,monospace; border:2px solid #141414; border-radius:8px; background:var(--stage); color:#141414; padding:8px; resize:vertical; }
 </style>
 </head>
 <body>
@@ -161,6 +196,10 @@
     <div style="font-size:10px;color:var(--umut);padding:0 12px 12px" id="uLastTxt"></div>
   </div>
   <div class="sp"></div>
+  <div class="ucard" style="padding:10px 12px;display:flex;align-items:center;gap:10px">
+    <span class="lab" style="flex:1">Look</span>
+    <div class="g g2" id="uStyle" style="flex:2"><button type="button" data-st="studio">Studio</button><button type="button" data-st="comic">Comic</button></div>
+  </div>
   <div class="g g2"><button type="button" id="uHistory">History</button><button class="dark" type="button" id="uDiag">Diagnostics</button></div>
 </section>
 
@@ -201,7 +240,7 @@
   <div class="ucard vizc" id="uPressCard" style="display:none">
     <div class="vh"><span>PRESS BARS</span><button type="button" class="uTone">TONE: ON</button></div>
     <canvas id="uPressCv"></canvas>
-    <div class="unote">One bar per press, same scale. Each press appears about 3 s after you finish it; short presses are marked when you rest.</div>
+    <div class="unote">One bar per press, same scale. Each press appears about a second after you finish it; short presses are marked when you rest.</div>
   </div>
   <div class="ucard vizc" id="uFlowCard" style="display:none">
     <div class="vh"><span>FLOW</span><button type="button" class="uTone">TONE: ON</button></div>
@@ -240,6 +279,12 @@
   <div class="g" id="uSumCards"></div>
   <div class="ucard" style="padding:6px 12px"><table id="uSumTable"></table><div class="lab" style="font-size:9px;padding:2px 0 4px" id="uSumFoot"></div></div>
   <div class="sp"></div>
+  <div class="ucard" id="uFb" style="padding:10px 12px;display:flex;flex-direction:column;gap:8px">
+    <div class="lab">Quick question: which look do you prefer?</div>
+    <div class="g g3" id="uFbBtns"><button type="button" data-p="studio">Studio</button><button type="button" data-p="comic">Comic</button><button type="button" data-p="none">No pref.</button></div>
+    <textarea id="uFbTxt" rows="2" placeholder="Anything you would change? (optional)" aria-label="Comment on the look"></textarea>
+    <div class="lab" id="uFbSaved"></div>
+  </div>
   <div class="g g2"><button type="button" id="uExport" style="min-height:52px;font-size:13px">Export</button><button type="button" id="uDone" style="min-height:52px;font-size:13px;background:var(--or)">Done</button></div>
 </section>
 </div>
@@ -980,12 +1025,23 @@ const TONE = (() => {
   return {
     ensure, get on() { return on; },
     set(v) { on = v; try { localStorage.setItem('kb_tone', v ? '1' : '0'); } catch (e) {} if (v) { ensure(); blip(440, 'triangle', 0.15, 0.25); } },
+    whoosh() {               // Comic style: a short swish of filtered noise on each swing
+      if (!ac || !on) return;
+      try {
+        const t = ac.currentTime, len = 0.28, b = ac.createBuffer(1, Math.floor(ac.sampleRate * len), ac.sampleRate), d = b.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+        const s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain(); s.buffer = b; f.type = 'bandpass'; f.Q.value = 2;
+        f.frequency.setValueAtTime(500, t); f.frequency.exponentialRampToValueAtTime(2600, t + len);
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.28, t + 0.07); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+        s.connect(f); f.connect(g); g.connect(master); s.start(t);
+      } catch (e) {}
+    },
     rep(n, short) {          // a rising note per rep (pentatonic, wraps every 10); a low thud for a short swing; a chime on every 10th
       if (short) { blip(110, 'sine', 0.2, 0.4); return; }
       const f = VIZ_NOTES[(n - 1) % 10]; blip(f, 'triangle', 0.32, 0.34); blip(f / 2, 'sine', 0.4, 0.22);
       if (n % 10 === 0) [523.25, 659.25, 783.99, 1046.5].forEach((q, i) => blip(q, 'triangle', 0.45, 0.26, 0.12 + i * 0.07));
     },
-    press(n) {               // a press is counted (about 3 s after lockout): a soft high note (wraps every 5); a chime on every 5th
+    press(n) {               // a press is counted (about 1 s after lockout): a soft high note (wraps every 5); a chime on every 5th
       const f = [523.25, 587.33, 659.25, 783.99, 880][(n - 1) % 5]; blip(f, 'sine', 0.55, 0.3); blip(f * 2, 'triangle', 0.25, 0.09);
       if (n % 5 === 0) [523.25, 659.25, 783.99, 1046.5].forEach((q, i) => blip(q, 'triangle', 0.45, 0.26, 0.12 + i * 0.07));
     },
@@ -1003,6 +1059,27 @@ function vizRep(r) {             // called for every counted swing rep
   if (res.flipped) { try { localStorage.setItem('kb_viz_axis', JSON.stringify(SWINGVIZ.u)); } catch (e) {} }
   vizLast = { t: r.t, col };
   TONE.rep(r.repInSet, short);
+  if (vizComic && !short) TONE.whoosh();
+}
+// ---- Comic style (user view, 16 Nov): same data, drawn as a comic panel. Display only.
+let vizComic = false;
+const COMIC_FONT = 'Bangers, Impact, sans-serif';
+function comicBg(g, w, h) {
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h);
+  g.fillStyle = 'rgba(31,95,191,.16)';
+  for (let y = 4, row = 0; y < h; y += 8, row++) for (let x = (row % 2 ? 6 : 2); x < w; x += 8) { g.beginPath(); g.arc(x, y, 1.3, 0, 7); g.fill(); }
+}
+function comicBurst(g, x, y, r, fill, short) {
+  g.beginPath();
+  for (let i = 0; i < 28; i++) { const a = Math.PI * i / 14, q = i % 2 ? r * 0.74 : r; g[i ? 'lineTo' : 'moveTo'](x + q * Math.sin(a), y - q * Math.cos(a)); }
+  g.closePath(); g.lineJoin = 'round';
+  if (short) { g.fillStyle = '#d6d3cb'; g.fill(); g.strokeStyle = '#5a564d'; g.lineWidth = 2.5; g.setLineDash([4, 3]); g.stroke(); g.setLineDash([]); }
+  else { g.fillStyle = fill; g.fill(); g.strokeStyle = '#141414'; g.lineWidth = 3; g.stroke(); }
+}
+function comicSfx(g, text, x, y, size, rot, alpha) {
+  g.save(); g.translate(x, y); g.rotate(rot); g.globalAlpha = Math.max(0, Math.min(1, alpha));
+  g.font = size + 'px ' + COMIC_FONT; g.textAlign = 'center'; g.lineJoin = 'round';
+  g.lineWidth = size * 0.22; g.strokeStyle = '#141414'; g.strokeText(text, 0, 0); g.fillStyle = '#ffd400'; g.fillText(text, 0, 0); g.restore();
 }
 function swingDraw() {
   const c = $('viz'), dpr = window.devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight; if (!w || !h) return;
@@ -1012,20 +1089,23 @@ function swingDraw() {
   const INK = '#141414', MUTE = '#8a8780', GREY = '#b9b6ae', mono = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
   const L = w * 0.13, R = w * 0.9, yT = h * 0.17, yB = h * 0.9, WIN = 6000;
   const X = t => R - (now - t) / WIN * (R - L), Y = a => yB - (yB - yT) * (Math.max(SWINGVIZ.LO, Math.min(SWINGVIZ.HI, a)) - SWINGVIZ.LO) / (SWINGVIZ.HI - SWINGVIZ.LO);
-  g.fillStyle = '#f5f4f0'; g.fillRect(0, 0, w, h);
+  if (vizComic) comicBg(g, w, h); else { g.fillStyle = '#f5f4f0'; g.fillRect(0, 0, w, h); }
   const k = (now - vizLast.t) / 700;
   if (k < 1) { g.globalAlpha = (1 - k) * 0.16; g.fillStyle = vizLast.col; g.fillRect(0, 0, w, h); g.globalAlpha = 1; }
-  g.fillStyle = '#d3d0c8'; for (let x = 11; x < w; x += 22) for (let y = 11; y < h; y += 22) g.fillRect(x - 1, y - 1, 2, 2);
-  g.lineWidth = 1.5; g.strokeStyle = GREY; g.setLineDash([3, 6]); g.font = '10px ' + mono; g.fillStyle = MUTE; g.textAlign = 'left';
+  if (!vizComic) { g.fillStyle = '#d3d0c8'; for (let x = 11; x < w; x += 22) for (let y = 11; y < h; y += 22) g.fillRect(x - 1, y - 1, 2, 2); }
+  g.lineWidth = 1.5; g.strokeStyle = GREY; g.setLineDash([3, 6]); g.font = vizComic ? '700 11px "Comic Neue",sans-serif' : '10px ' + mono; g.fillStyle = MUTE; g.textAlign = 'left';
   [[0, 'HANG'], [SWINGVIZ.FLOAT_DEG, 'FLOAT']].forEach(([a, l]) => { g.beginPath(); g.moveTo(6, Y(a)); g.lineTo(R, Y(a)); g.stroke(); g.fillText(l, 6, Y(a) - 5); });
   g.beginPath(); g.moveTo(R, yT - 8); g.lineTo(R, yB + 6); g.stroke(); g.setLineDash([]);
   const H = SWINGVIZ.hist;
-  g.strokeStyle = INK; g.lineWidth = 3; g.lineJoin = 'round'; g.lineCap = 'round'; g.beginPath(); let first = true;
-  for (const p of H) { const x = X(p.t); if (x < L - 4) continue; first ? g.moveTo(x, Y(p.th)) : g.lineTo(x, Y(p.th)); first = false; }
-  g.stroke();
+  const trace = () => { g.beginPath(); let first = true; for (const p of H) { const x = X(p.t); if (x < L - 4) continue; first ? g.moveTo(x, Y(p.th)) : g.lineTo(x, Y(p.th)); first = false; } };
+  g.lineJoin = 'round'; g.lineCap = 'round';
+  if (vizComic) { trace(); g.strokeStyle = INK; g.lineWidth = 8; g.stroke(); trace(); g.strokeStyle = '#1f5fbf'; g.lineWidth = 3.5; g.stroke(); }
+  else { trace(); g.strokeStyle = INK; g.lineWidth = 3; g.stroke(); }
   const r = Math.max(8, Math.min(12, w * 0.028));
   for (const m of SWINGVIZ.marks) {
-    const x = X(m.t); if (x < L - r) continue; const y = Y(m.th); g.beginPath(); g.arc(x, y, r, 0, 7);
+    const x = X(m.t); if (x < L - r) continue; const y = Y(m.th);
+    if (vizComic) { comicBurst(g, x, y, r * 1.35, VIZ_PAL[(m.n - 1) % 5], m.short); g.fillStyle = INK; g.font = '16px ' + COMIC_FONT; g.textAlign = 'center'; g.fillText(m.short ? 'SHORT!' : String(m.n), x, y - r * 1.35 - 5); continue; }
+    g.beginPath(); g.arc(x, y, r, 0, 7);
     if (m.short) { g.fillStyle = '#f5f4f0'; g.fill(); g.strokeStyle = MUTE; g.lineWidth = 2.5; g.setLineDash([4, 3]); g.stroke(); g.setLineDash([]); }
     else { g.fillStyle = VIZ_PAL[(m.n - 1) % 5]; g.fill(); g.strokeStyle = INK; g.lineWidth = 2.5; g.stroke(); }
     g.fillStyle = INK; g.font = '700 11px ' + mono; g.textAlign = 'center'; g.fillText(String(m.n), x, y - r - 5);
@@ -1033,8 +1113,10 @@ function swingDraw() {
   const live = H.length && now - H[H.length - 1].t < 1500;
   if (live) {
     const y = Y(H[H.length - 1].th), n = reps.filter(q => q.counted && q.set === curSet).length;
-    g.beginPath(); g.arc(R, y, r, 0, 7); g.fillStyle = VIZ_PAL[n % 5]; g.fill(); g.strokeStyle = INK; g.lineWidth = 3; g.stroke();
-    if (k < 1) { g.save(); g.globalAlpha = 1 - k; g.strokeStyle = vizLast.col; g.lineWidth = 3; g.beginPath(); g.arc(R, y, r * (1 + k * 2.2), 0, 7); g.stroke(); g.restore(); }
+    if (vizComic) comicBurst(g, R, y, r * 1.35, VIZ_PAL[n % 5], false);
+    else { g.beginPath(); g.arc(R, y, r, 0, 7); g.fillStyle = VIZ_PAL[n % 5]; g.fill(); g.strokeStyle = INK; g.lineWidth = 3; g.stroke(); }
+    if (k < 1 && !vizComic) { g.save(); g.globalAlpha = 1 - k; g.strokeStyle = vizLast.col; g.lineWidth = 3; g.beginPath(); g.arc(R, y, r * (1 + k * 2.2), 0, 7); g.stroke(); g.restore(); }
+    if (k < 1.3 && vizComic && n > 0) comicSfx(g, vizLast.col === VIZ_GREY ? 'SHORT!' : 'WHOOSH!', R - w * 0.2, yT + 6, Math.round(w * 0.085), -0.18, 1.3 - k);
   } else {
     g.fillStyle = MUTE; g.font = '11px ' + mono; g.textAlign = 'center';
     g.fillText(phase === 'work' ? 'waiting for the raw stream…' : 'press Start set, then swing', (L + R) / 2, h / 2);
@@ -1059,10 +1141,10 @@ function cleanDraw() {
   const n = cleanFast.set === curSet && phase === 'work' ? cleanFast.n : 0;
   if (vizCleanSeen.caught && tw < 90) vizCleanSeen.caught = false;                  // dropped back down: ready for the next clean
   const col = vizCleanSeen.caught ? VIZ_PAL[(n - 1 + 5) % 5] : VIZ_PAL[n % 5];
-  g.fillStyle = PAPER; g.fillRect(0, 0, w, h);
+  if (vizComic) comicBg(g, w, h); else { g.fillStyle = PAPER; g.fillRect(0, 0, w, h); }
   const k = (now - vizLast.t) / 700;
   if (k < 1) { g.globalAlpha = (1 - k) * 0.16; g.fillStyle = vizLast.col; g.fillRect(0, 0, w, h); g.globalAlpha = 1; }
-  g.fillStyle = '#d3d0c8'; for (let x = 11; x < w; x += 22) for (let y = 11; y < h; y += 22) g.fillRect(x - 1, y - 1, 2, 2);
+  if (!vizComic) { g.fillStyle = '#d3d0c8'; for (let x = 11; x < w; x += 22) for (let y = 11; y < h; y += 22) g.fillRect(x - 1, y - 1, 2, 2); }
   const rr = (x, y, ww, hh, r) => { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + ww, y, x + ww, y + hh, r); g.arcTo(x + ww, y + hh, x, y + hh, r); g.arcTo(x, y + hh, x, y, r); g.arcTo(x, y, x + ww, y, r); g.closePath(); };
   // tilt fader
   const fx = 22, f0 = h * 0.82, f1 = h * 0.12, FY = v => f0 - (f0 - f1) * v;
@@ -1091,7 +1173,8 @@ function cleanDraw() {
   g.beginPath(); g.arc(nx, ny, 8, 0, 7); g.fillStyle = live ? col : PAPER; g.fill(); g.strokeStyle = INK; g.lineWidth = 2.5; g.stroke();
   if (k < 1) { g.save(); g.globalAlpha = 1 - k; g.strokeStyle = vizLast.col; g.lineWidth = 4; g.beginPath(); g.arc(cx, cy, R * (1 + k * 0.18), 0, 7); g.stroke(); g.restore(); }
   g.fillStyle = INK; g.beginPath(); g.arc(cx, cy, 4, 0, 7); g.fill();
-  if (n > 0) { g.font = '700 ' + Math.round(R * 0.42) + 'px ' + mono; g.textAlign = 'center'; g.fillText(String(n), cx, cy + R * 0.42); }
+  if (n > 0) { g.font = vizComic ? Math.round(R * 0.5) + 'px ' + COMIC_FONT : '700 ' + Math.round(R * 0.42) + 'px ' + mono; g.textAlign = 'center'; if (vizComic) g.fillStyle = '#e3242b'; g.fillText(String(n), cx, cy + R * 0.42); }
+  if (vizComic && k < 1.4 && vizCleanSeen.caught) comicSfx(g, 'KA-CHUNK!', cx + R * 0.35, cy + R + 4, Math.round(w * 0.08), -0.12, 1.4 - k);
   // pull / flip / catch
   [['PULL', live && (tw > 40 || vizCleanSeen.caught)], ['FLIP', live && (tw > 150 || vizCleanSeen.caught)], ['CATCH', live && vizCleanSeen.caught]].forEach(([l, on], i) => {
     const x = cx + (i - 1) * Math.min(64, w * 0.16), y = h * 0.88;
@@ -1227,9 +1310,9 @@ $('btnCsv').onclick = () => {
       movement: 'press', set_mode: 'press', press_height_cm: (r.rise * 100).toFixed(0), short_rep: r.short ? 1 : 0,
       your_count: m.trueReps != null ? m.trueReps : '', set_description: setDesc(s), ...capCols() }));
   });
-  rows.forEach(r => { const m = setMeta[r.set] || {}; r.hand = m.hand || ''; r.workout_id = m.workout || ''; });   // set by the user view
+  rows.forEach(r => { const m = setMeta[r.set] || {}; r.hand = m.hand || ''; r.workout_id = m.workout || ''; r.style = m.style || ''; r.look_pref = m.lookPref || ''; r.look_comment = m.lookComment || ''; });   // set by the user view
   download(fname('reps'), csv(rows, ['time', 'phase', 'set', 'rep_in_set', 'counted', 'full_swing', 'device_set', 'device_total', 'peak_g', 'interval_ms',
-    'gyro_peak_dps', 'sweep_deg', 'gyro_launch_dps', 'bell_kg', 'radius_measured_m', 'radius_used_m', 'speed_ms', 'energy_j', 'power_w', 'movement', 'set_mode', 'press_height_cm', 'float_depth_g', 'short_rep', 'your_count', 'hand', 'workout_id', 'set_description', 'session_name', 'description']));
+    'gyro_peak_dps', 'sweep_deg', 'gyro_launch_dps', 'bell_kg', 'radius_measured_m', 'radius_used_m', 'speed_ms', 'energy_j', 'power_w', 'movement', 'set_mode', 'press_height_cm', 'float_depth_g', 'short_rep', 'your_count', 'hand', 'workout_id', 'style', 'look_pref', 'look_comment', 'set_description', 'session_name', 'description']));
 };
 $('btnRawCsv').onclick = () => {
   if (!raw.length) { setStatus('No raw data yet - press Start set while connected'); return; }
@@ -1418,7 +1501,7 @@ const UV = (() => {
   const TIPS = {
     swing: 'Swings: start with the bell on the floor in front of you. A rep counts as the bell floats at the top.',
     clean: 'Cleans: each clean counts as the bell lands in the rack, under a second after the pull.',
-    press: 'Press: clean the bell to the rack first. Each press appears about 3 seconds after you finish it.',
+    press: 'Press: clean the bell to the rack first. Each press appears about a second after you finish it.',
     auto: 'Auto (trial): swings, cleans and presses in any order. Counts land a few seconds behind and are exact when you rest.'
   };
   const pad = n => String(Math.max(0, n | 0)).padStart(2, '0');
@@ -1437,6 +1520,19 @@ const UV = (() => {
   let seen = { set: 0, swing: 0, clean: 0, press: 0, seq: [] };   // live counts already announced (tone, flow strip)
 
   const live = () => connected() || !!simTimer;
+
+  // ---------- look: Studio (Teenage Engineering style) or Comic. Same screens and data; remembered per browser ----------
+  let style = load('kbu_style') === 'comic' ? 'comic' : 'studio';
+  const COMIC_TXT = { uStart: ['START', 'START!'], uRest: ['REST', 'TAKE A BREATHER!'], uEndSet: ['END', 'THE END'], uDone: ['Done', 'To be continued…'],
+                      uHistory: ['History', 'Back issues'], uDiag: ['Diagnostics', 'Behind the scenes'], uExport: ['Export', 'Export'], uGo: ['START', 'GO!'] };
+  function applyStyle() {
+    const comic = style === 'comic';
+    $('uv').classList.toggle('comic', comic);
+    vizComic = comic && view === 'user';
+    Object.keys(COMIC_TXT).forEach(id => { $(id).textContent = COMIC_TXT[id][comic ? 1 : 0]; });
+    document.querySelectorAll('#uStyle button').forEach(b => { b.classList.toggle('sel', b.dataset.st === style); b.setAttribute('aria-pressed', b.dataset.st === style); });
+  }
+  document.querySelectorAll('#uStyle button').forEach(b => b.onclick = () => { style = b.dataset.st; store('kbu_style', style); applyStyle(); });
   let toastT = 0;
   function toast(m) { const t = $('uToast'); t.textContent = m; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 3400); }
 
@@ -1475,7 +1571,7 @@ const UV = (() => {
   // ---------- view switch ----------
   function setView(v) {
     view = v; store('kbu_view', v);
-    document.body.classList.toggle('u', v === 'user');
+    document.body.classList.toggle('u', v === 'user'); applyStyle();
     $('uv').hidden = v !== 'user'; $('diag').hidden = v === 'user';
     const card = $('vizCard');
     if (v === 'user') $('uVizSlot').appendChild(card); else $('hint').after(card);
@@ -1543,7 +1639,7 @@ const UV = (() => {
     $('move').value = next.mv; try { localStorage.setItem('kb_move', next.mv); } catch (e) {}
     $('kg').value = next.kg; try { localStorage.setItem('kb_kg', String(next.kg)); } catch (e) {}
     setPhase('work');
-    setMeta[curSet].hand = next.hand; setMeta[curSet].workout = W.id; save();
+    setMeta[curSet].hand = next.hand; setMeta[curSet].workout = W.id; setMeta[curSet].style = style; save();
     seen = { set: curSet, swing: 0, clean: 0, press: 0, seq: [] };
     enableRaw(); go('set');
   }
@@ -1635,7 +1731,7 @@ const UV = (() => {
     if (phase !== 'idle') { setPhase('idle'); disableRaw(); }
     if (!W) { go('home'); return; }
     W.end = Date.now(); store('kbu_workout', null);
-    paintSummary(); go('summary');
+    paintSummary(); paintFb(); go('summary');
   }
   let lastSum = null;
   function paintSummary() {
@@ -1671,7 +1767,25 @@ const UV = (() => {
     lastSum = { when, mins: Math.max(1, Math.round((end - W.start) / 60000)), kg: Math.round(kg), reps: n, sets: ws.length, by: Object.fromEntries(ks.map(k => [k, by[k].n])) };
     if (ws.length && n) store('kbu_last', lastSum);
   }
-  $('uExport').onclick = () => $('btnCsv').click();
+  // ---------- feedback on the look (saved on every set of the workout, so it is in the reps CSV; also kept in this browser) ----------
+  function paintFb() {
+    const ws = wSets(), m = ws.length ? setMeta[ws[0]] : null, p = m && m.lookPref;
+    document.querySelectorAll('#uFbBtns button').forEach(b => { b.classList.toggle('sel', b.dataset.p === p); b.setAttribute('aria-pressed', b.dataset.p === p); });
+    if (document.activeElement !== $('uFbTxt')) $('uFbTxt').value = (m && m.lookComment) || '';
+    $('uFbSaved').textContent = p ? 'Thanks, saved with this workout (it is in the export).' : '';
+    $('uFb').style.display = ws.length ? '' : 'none';
+  }
+  function saveFb(patch) {
+    const ws = wSets(); if (!ws.length) return;
+    ws.forEach(s => Object.assign(setMeta[s], patch)); save();
+    const all = load('kbu_feedback') || [], m = setMeta[ws[0]], rec = { workout: W.id, at: new Date().toISOString(), pref: m.lookPref || '', comment: m.lookComment || '',
+      styles: [...new Set(ws.map(s => setMeta[s].style || 'studio'))].join('+') };
+    store('kbu_feedback', all.filter(f => f.workout !== W.id).concat(rec).slice(-50));
+    paintFb();
+  }
+  document.querySelectorAll('#uFbBtns button').forEach(b => b.onclick = () => saveFb({ lookPref: b.dataset.p }));
+  $('uFbTxt').onchange = () => saveFb({ lookComment: $('uFbTxt').value.trim().slice(0, 300) });
+  $('uExport').onclick = () => { if (document.activeElement === $('uFbTxt')) saveFb({ lookComment: $('uFbTxt').value.trim().slice(0, 300) }); $('btnCsv').click(); };
   $('uDone').onclick = () => { W = null; go('home'); };
   document.querySelectorAll('#uv .uTone').forEach(b => b.onclick = () => { TONE.set(!TONE.on); paintTone(); });
   function paintTone() {
@@ -1688,7 +1802,7 @@ const UV = (() => {
     const c = counts(s);
     ['clean', 'press', 'swing'].forEach(k => {
       if (mv === 'press' && k !== 'press') return;
-      while (seen[k] < c[k]) { seen[k]++; seen.seq.push(k); if (k === 'press') TONE.press(seen[k]); else if (k === 'clean') TONE.clean(seen[k]); else TONE.rep(seen[k], false); vizLast = { t: Date.now(), col: MCOL[k] }; }
+      while (seen[k] < c[k]) { seen[k]++; seen.seq.push(k); if (k === 'press') TONE.press(seen[k]); else if (k === 'clean') TONE.clean(seen[k]); else { TONE.rep(seen[k], false); if (vizComic) TONE.whoosh(); } vizLast = { t: Date.now(), col: MCOL[k] }; }
     });
   }
 
