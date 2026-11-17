@@ -60,7 +60,7 @@ function rowsOf(f, set) {
   await page.click('#uRest');
 
   // ---- set 3: press, 12 kg (replayed capture A set 1: 8 presses)
-  await page.click('#uChange'); await page.click('#uMv [data-mv="press"]'); await page.click('#uKg [data-kg="12"]'); await page.click('#uGo');
+  await page.click('#uChange'); await page.click('#uMv [data-mv="press"]'); await page.click('#uKg [data-kg="12"]'); await page.click('#uHand [data-h="A"]'); await page.click('#uGo');
   ck(await vis('#uPressCard') && !(await page.evaluate(() => $('vizCard').offsetHeight)), 'press shows press bars, no trace card');
   const pr = await page.evaluate(rows => {
     const shift = Date.now() + 500 - rows[0].t; let maxLive = 0;   // replayed data starts now, after the earlier sets, as it would live
@@ -72,10 +72,12 @@ function rowsOf(f, set) {
     return { live: pressLive.n, big: +$('uBig').textContent, bars: (pressLive.rises || []).length };
   }, rowsOf('kb_raw_12kg-ohp-rh_2026-11-12-21-38-28.csv', 1));
   ck(pr.big === pr.live && pr.live >= 6, `press live count shows on the big number (${pr.big}, bars ${pr.bars})`);
+  ck(/· R$/.test(await txt('#uSetLabel')), 'Auto hand: the press set shows the hand it read (R): ' + await txt('#uSetLabel'));
   await shot('5press');
   await page.click('#uRest');
   const prFinal = await page.evaluate(() => setMeta[curSet].press.reps.length);
   ck(prFinal === 8 && (await txt('#uDoneHud')).startsWith('PRESSES 8'), 'press final count at Rest is 8 (truth 8)');
+  ck(/WATTS \d+/.test(await txt('#uDoneHud')) && /· R$/.test(await txt('#uDoneSub')), 'press set shows watts and hand R at Rest: ' + await txt('#uDoneHud') + ' / ' + await txt('#uDoneSub'));
 
   // ---- set 4: Auto, 12 kg (replayed 12:13 set 1)
   await page.click('#uChange'); await page.click('#uMv [data-mv="auto"]'); await page.click('#uGo');
@@ -91,6 +93,7 @@ function rowsOf(f, set) {
   }, rowsOf('kb_raw_12kg-auto-test_2026-11-15-12-13-23.csv', 1));
   ck(au.tiles.join() === [au.live.swings, au.live.cleans, au.live.presses].join() && au.flow === au.tiles.reduce((a, b) => a + b, 0), `Auto tiles match the live labeller and the flow strip (${au.tiles.join(' / ')}, ${au.flow} shapes)`);
   await shot('6auto');
+  ck(/· R$/.test(await txt('#uSetLabel')), 'Auto hand: the Auto set shows the hand it read (R)');
   await page.click('#uRest');
   const auF = await page.evaluate(() => { const a = setMeta[curSet].auto; return [a.swings.length, a.cleans.length, a.presses.length]; });
   ck(auF.join() === '4,5,4', 'Auto final counts at Rest are 4 / 5 / 4 (truth 4 / 5 / 4): ' + auF.join(' / '));
@@ -102,6 +105,7 @@ function rowsOf(f, set) {
   ck(sum.kg === expKg, `total kg ${sum.kg} = (your swing count + cleans) x 16 + 8 presses x 12 + 13 Auto reps x 12 = ${expKg}`);
   ck(sum.rows === 6 && sum.cards === 3, 'summary has 6 table rows (4 sets, Auto split in three) and 3 movement cards');
   ck(await page.evaluate(() => /W AVG/.test($('uSumCards').innerText)), 'swing card shows average watts');
+  ck(await page.evaluate(() => (($('uSumCards').innerText.match(/W AVG/g) || []).length >= 3 && $('uSumBal').style.display === 'none')), 'press and clean cards show watts too; no balance card with one side only');
   ck(sum.last && sum.last.sets === 4 && sum.last.kg === expKg, 'last workout saved for Home');
   await page.click('#uFbBtns [data-p="comic"]'); await page.fill('#uFbTxt', 'Love the bursts, rest timer too small'); await page.click('#uSumKg');
   const fb = await page.evaluate(() => ({ p: Object.values(setMeta).filter(m => m.lookPref === 'comic').length, c: Object.values(setMeta).filter(m => /bursts/.test(m.lookComment || '')).length, saved: $('uFbSaved').textContent, list: JSON.parse(localStorage.getItem('kbu_feedback') || '[]') }));
@@ -115,6 +119,25 @@ function rowsOf(f, set) {
   ck(head.includes('style') && head.includes('look_pref') && head.includes('look_comment') && /,comic,comic,"?Love the bursts/.test(csvText), 'CSV carries the look and the feedback');
   await page.click('#uDone'); ck(await vis('#uHome') && await vis('#uLast'), 'Done returns Home with the last workout card');
   await shot('8home');
+
+  // ---- a second workout: Auto sets replaying real left and right hand cleans (16:05 set 1 = right, set 3 = left): the balance card
+  await page.click('#uStart'); await page.click('#uMv [data-mv="auto"]'); await page.click('#uKg [data-kg="12"]'); await page.click('#uHand [data-h="A"]');
+  const replayAuto = (file, set) => page.evaluate(rows => {
+    const shift = (raw.length ? raw[raw.length - 1].t + 500 : Date.now()) - rows[0].t;
+    for (let i = 0; i < rows.length; i += 5) { rows.slice(i, i + 5).forEach(r => raw.push({ ...r, t: r.t + shift, phase: 'work', set: curSet })); if (i % 25 === 0) { updateAutoLive(); __uv.afterTick(); render(); } }
+    for (let k = 0; k < 4; k++) { updateAutoLive(); __uv.afterTick(); render(); }
+    return $('uSetLabel').innerText.replace(/\s+/g, ' ');
+  }, rowsOf(file, set));
+  const CF = 'kb_raw_12kg-cleans-RHS-and-LHS-test_2026-11-15-16-05-41.csv';
+  await page.click('#uGo'); const lab1 = await replayAuto(CF, 1); await page.click('#uRest');
+  await page.click('#uRestGo'); const lab2 = await replayAuto(CF, 3); await page.click('#uRest');
+  ck(/· R$/.test(lab1) && /· L$/.test(lab2), 'Auto hand reads R for the right-hand set and L for the left-hand set: ' + lab1 + ' / ' + lab2);
+  await page.click('#uRestEnd');
+  const bal = await page.evaluate(() => ({ shown: $('uSumBal').style.display !== 'none', t: $('uSumBal').innerText.replace(/\s+/g, ' '), rows: [...$('uSumTable').querySelectorAll('tbody tr')].map(r => r.innerText.replace(/\s+/g, ' ')) }));
+  ck(bal.shown && /CLEANS . 12 KG/.test(bal.t) && /R \d+ W/.test(bal.t) && /L \d+ W/.test(bal.t) && /(EVEN|% LOWER)/.test(bal.t), 'summary shows left / right balance for the 12 kg cleans: ' + bal.t.slice(0, 160));
+  ck(bal.rows.length === 2 && / R\b/.test(bal.rows[0]) && / L\b/.test(bal.rows[1]), 'summary rows carry the detected hand: ' + bal.rows.join(' | '));
+  await shot('7balance');
+  await page.click('#uDone');
 
   // ---- view switch and #dev
   await page.click('#uDiag');

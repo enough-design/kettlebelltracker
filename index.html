@@ -215,7 +215,7 @@
   <div style="display:flex;justify-content:space-between"><span class="lab">Bell</span><span class="lab">kg · kept for the next set</span></div>
   <div class="g g4" id="uKg"></div>
   <div class="lab">Hand</div>
-  <div class="g g3" id="uHand"><button type="button" data-h="L">Left</button><button type="button" data-h="R">Right</button><button type="button" data-h="Both">Both</button></div>
+  <div class="g g4" id="uHand"><button type="button" data-h="A">Auto</button><button type="button" data-h="L">Left</button><button type="button" data-h="R">Right</button><button type="button" data-h="Both">Both</button></div>
   <div style="border-top:2px solid var(--uline);padding-top:10px;font-size:11px;line-height:1.5;color:var(--umut)" id="uTip"></div>
   <div class="sp"></div>
   <div style="display:flex;align-items:center;gap:14px"><button class="go" type="button" id="uGo">START</button><span class="lab" id="uSetupSum"></span></div>
@@ -278,6 +278,7 @@
   </div>
   <div class="g" id="uSumCards"></div>
   <div class="ucard" style="padding:6px 12px"><table id="uSumTable"></table><div class="lab" style="font-size:9px;padding:2px 0 4px" id="uSumFoot"></div></div>
+  <div class="ucard" id="uSumBal" style="padding:10px 12px;display:none;flex-direction:column;gap:6px"></div>
   <div class="sp"></div>
   <div class="ucard" id="uFb" style="padding:10px 12px;display:flex;flex-direction:column;gap:8px">
     <div class="lab">Quick question: which look do you prefer?</div>
@@ -319,6 +320,13 @@
       <input id="rad" type="number" inputmode="decimal" min="0.3" max="1.2" step="0.01" placeholder="0.60" aria-label="Swing radius in metres" style="width:92px">
       <span class="u">m</span>
       <span class="radhint" id="radHint"></span>
+      <label for="cleanH">Clean lift height</label>
+      <input id="cleanH" type="number" inputmode="decimal" min="0.2" max="1" step="0.01" placeholder="0.50" aria-label="Clean lift height in metres" style="width:92px">
+      <span class="u">m</span>
+      <span class="radhint">Hang to rack, used for clean power (default 0.50 m). Only the comparison between left and right is meaningful.</span>
+      <label for="handFlip">Swap left / right</label>
+      <input id="handFlip" type="checkbox" aria-label="Swap the detected hand">
+      <span class="radhint">Tick if the detected hand is the wrong way round (the Nano mounted the other way up).</span>
     </div>
   </details>
 </div>
@@ -386,6 +394,7 @@
   </table>
   </div>
 </div>
+<div class="card" id="balDiag" style="margin-top:12px;display:none"><div class="lbl" style="margin-bottom:6px">Left / right (this session)</div><div id="balDiagTxt" style="font-size:13px;line-height:1.6"></div></div>
 </div><!-- /diag -->
 
 <script>
@@ -425,6 +434,9 @@ CHIPS.forEach(w => {
 try { const w = localStorage.getItem('kb_kg'); if (w) $('kg').value = w; } catch (e) {}
 try { const rr = localStorage.getItem('kb_radius'); if (rr) $('rad').value = rr; } catch (e) {}
 function radiusSetting() { const v = parseFloat($('rad').value); return v >= 0.3 && v <= 1.2 ? v : DEFAULT_RADIUS; }
+try { const ch = localStorage.getItem('kb_cleanh'); if (ch) $('cleanH').value = ch; $('handFlip').checked = localStorage.getItem('kb_handflip') === '1'; } catch (e) {}
+$('cleanH').addEventListener('input', () => { try { localStorage.setItem('kb_cleanh', $('cleanH').value); } catch (e) {} render(); });
+$('handFlip').addEventListener('change', () => { handFlip = $('handFlip').checked; try { localStorage.setItem('kb_handflip', handFlip ? '1' : '0'); } catch (e) {} render(); });
 $('rad').addEventListener('input', () => { try { localStorage.setItem('kb_radius', $('rad').value); } catch (e) {} render(); });
 function kgValue() { const v = parseFloat($('kg').value); return v > 0 && v <= 100 ? v : 0; }
 function weightChanged() {
@@ -718,13 +730,43 @@ const OHP = (() => {
     for (let j = Math.max(0, k - PUTDOWN_PRE * FS); j <= Math.min(s.gm.length - 1, k + PUTDOWN_W * FS); j++) if (s.gm[j] >= PUTDOWN_G) return true;
     return false;
   }
+  // ---- left / right (17 Nov) ----
+  // Clean-like twist bursts, as the Auto labeller counts them (>= 350 dps while the bell rises, >= 80 deg net about x, >= 210 deg total).
+  // Signed net twist about x (deg): the same sign on every right-hand clean (+, 38 reps) and the opposite on every left-hand one (-, 35 reps) in
+  // the 15 Nov captures (16:05, 16:27, 14:46), which is how the page tells the hand. Presses start from a clean, so a press takes the sign
+  // of the last clean before it (the bell is racked in that hand). Mounting: back face, USB along the bell's vertical axis, as all the captures.
+  function cleanIdx(z, g, gx, t) {
+    const n = g.length, sum = (arr, lo, hi) => { let v = 0; for (let j = Math.max(0, lo); j < Math.min(n, hi); j++) v += arr[j]; return v; };
+    const cl = findPeaks(g, { height: AUTO_CLEAN, distance: 30 }).idx.filter(k =>
+      z[Math.min(n - 1, k + UP_WIN)] - z[Math.max(0, k - UP_WIN)] > 0 && Math.abs(sum(gx, k - 25, k + 25)) / FS >= NX_CLEAN && sum(g, k - 25, k + 25) / FS >= CLEAN_ROT);
+    for (let j = cl.length - 1; j > 0; j--)   // one clean can give two bursts (15 Nov 12:13 set 4, 0.6 s apart): keep the stronger
+      if (t[cl[j]] - t[cl[j - 1]] < CLEAN_SEP) cl.splice(g[cl[j]] > g[cl[j - 1]] ? j - 1 : j, 1);
+    return cl;
+  }
+  const cleanNx = (gx, k) => { let v = 0; for (let j = Math.max(0, k - 25); j < Math.min(gx.length, k + 25); j++) v += gx[j]; return v / FS; };   // signed net twist, deg
+  // Flip duration of a clean: width of its gyro burst at half the peak rate (s). Used for clean power (see CLEAN_LIFT on the page).
+  function flipWidth(g, k) {
+    const h = 0.5 * g[k]; let a = k, b = k;
+    while (a > 0 && g[a] >= h && k - a < 75) a--;
+    while (b < g.length - 1 && g[b] >= h && b - k < 75) b++;
+    return (b - a) / FS;
+  }
+  // Press timing: from leaving the rack (10% of the rise) to lockout; h90 = height gained over that stretch (m).
+  // Mean concentric power = m g h90 / tUp (see the page). Interior reps only: the first and last rep read differently (put-down).
+  function pressTiming(z, p) {
+    return p.map((k, i) => { const lo = Math.max(i ? p[i - 1] : 0, k - 2 * FS); let jm = lo, m = Infinity;
+      for (let j = lo; j < k; j++) if (z[j] < m) { m = z[j]; jm = j; }
+      const r = z[k] - m, lvl = m + 0.1 * r; let j10 = jm; while (j10 < k && z[j10] < lvl) j10++;
+      return { h90: z[k] - z[j10], tUp: (k - j10) / FS }; });
+  }
+  function lastCleanBefore(cl, gx, t, tt) { let nx = null; for (const k of cl) if (t[k] < tt) nx = cleanNx(gx, k); return nx; }
   function finalReps(s) {
     if (s.ax.length < 4 * FS) return [];
     const { z, H } = classify(s, Infinity);
     // put-downs are dropped here too (16 Nov 11:02 set 3: a false hump just before an end-of-set put-down was an 11th press); the same
     // put-down can hide a real press next to it in the whole-set trace, which the live count catches: finalizePress merges the two
-    const p = H.filter(h => h.press && !nearPutDown(s, h.k)).map(h => h.k), r = rise(z, p), sh = shortFlags(r);
-    return p.map((k, i) => ({ k, t: s.t[k], rise: r[i], short: sh[i] }));
+    const p = H.filter(h => h.press && !nearPutDown(s, h.k)).map(h => h.k), r = rise(z, p), sh = shortFlags(r), tm = pressTiming(z, p), cl = cleanIdx(z, s.gm, s.gx, s.t);
+    return p.map((k, i) => ({ k, t: s.t[k], rise: r[i], short: sh[i], h90: tm[i].h90, tUp: tm[i].tUp, cnx: lastCleanBefore(cl, s.gx, s.t, s.t[k]) }));
   }
   // Live (provisional) count: humps older than LIVE_LAG s; reports how many non-press humps (cleans, swings) have been seen
   function liveReps(s) {
@@ -734,8 +776,9 @@ const OHP = (() => {
     // place the top just after the twist, 16 Nov 11:02 set 2), not a press (two end-of-set
     // put-downs showed for a moment as an extra press with the faster live count, 16 Nov); the final count already rejects them
     const putDown = h => nearPutDown(s, h.k);
-    const p = H.filter(h => h.press && !putDown(h)).map(h => h.k), r = rise(z, p);
-    return { other: H.filter(h => !h.press).length, reps: p.map((k, i) => ({ k, t: s.t[k], rise: r[i] })) };
+    const p = H.filter(h => h.press && !putDown(h)).map(h => h.k), r = rise(z, p), tm = pressTiming(z, p), cl = cleanIdx(z, s.gm, s.gx, s.t).filter(k => k <= n - 26);   // only bursts with their whole window seen
+    const cnxs = cl.map(k => cleanNx(s.gx, k));
+    return { other: H.filter(h => !h.press).length, cnxs, reps: p.map((k, i) => ({ k, t: s.t[k], rise: r[i], h90: tm[i].h90, tUp: tm[i].tUp, cnx: lastCleanBefore(cl, s.gx, s.t, s.t[k]) })) };
   }
   // ---- Auto mode (trial): label every rep as swing, clean or press (mirrors tools/analysis/moves_v5.py, v6) ----
   // Cleans and swings are told apart by the AXIS of rotation: a clean spins the bell about the board's x axis (USB axis, the bell's
@@ -757,10 +800,7 @@ const OHP = (() => {
       return { k, t: t[k], fl, amin, apk, rot, nx, pre: maxBefore(g, k), mv, swingLike: fl >= FLOAT_MIN && rot >= 100 && nx < NX_CLEAN };
     });
     // clean: a hard twist about the x axis while the bell is rising
-    const cl = findPeaks(g, { height: AUTO_CLEAN, distance: 30 }).idx.filter(k =>
-      z[Math.min(n - 1, k + UP_WIN)] - z[Math.max(0, k - UP_WIN)] > 0 && Math.abs(sum(gx, k - 25, k + 25)) / FS >= NX_CLEAN && sum(g, k - 25, k + 25) / FS >= CLEAN_ROT);
-    for (let j = cl.length - 1; j > 0; j--)   // one clean can give two bursts (15 Nov 12:13 set 4, 0.6 s apart): keep the stronger
-      if (t[cl[j]] - t[cl[j - 1]] < CLEAN_SEP) cl.splice(g[cl[j]] > g[cl[j - 1]] ? j - 1 : j, 1);
+    const cl = cleanIdx(z, g, gx, t);
     const ct = cl.map(k => t[k]);
     // walk through the set in time order: a press needs the bell racked, i.e. the last clean is more recent than the last swing
     // arm moving before the press, not counting the clean's own burst (a pause in the rack after a clean read as a press, 15 Nov 12:13)
@@ -775,13 +815,13 @@ const OHP = (() => {
     });
     for (let j = H.length - 2; j >= 0; j--)   // a press-looking hump right before a swing is the start of the swing run
       if (H[j].press && !H[j + 1].press && H[j + 1].swingLike && H[j + 1].t - H[j].t <= SWING_GAP) H[j].press = false;
-    const P = H.filter(h => h.press), r = rise(z, P.map(h => h.k)), sh = shortFlags(r);
+    const P = H.filter(h => h.press), r = rise(z, P.map(h => h.k)), sh = shortFlags(r), tm = pressTiming(z, P.map(h => h.k));
     return {
       swings: H.filter(h => h.swingLike && !h.press && h.t <= tmax).map((h, i) => ({ k: h.k, t: h.t, depth: h.amin, apk: h.apk, short: (i > 0 && h.apk < SWING_PEAK) || h.amin > SWING_DEPTH })),
-      cleans: cl.filter(k => t[k] <= tmax).map(k => ({ k, t: t[k] })),
+      cleans: cl.filter(k => t[k] <= tmax).map(k => ({ k, t: t[k], nx: cleanNx(gx, k), tflip: flipWidth(g, k) })),
       // short presses not flagged in Auto: in mixed sets the measured press height climbs through the set (15 Nov 12:13: 55 -> 112 cm
       // on full presses), so the relative-height rule flagged full presses. Overhead press mode still flags them.
-      presses: P.map((h, i) => ({ k: h.k, t: h.t, rise: r[i], short: null })).filter(q => q.t <= tmax)
+      presses: P.map((h, i) => ({ k: h.k, t: h.t, rise: r[i], short: null, cnx: lastCleanBefore(cl, gx, t, h.t), h90: tm[i].h90, tUp: tm[i].tUp })).filter(q => q.t <= tmax)
     };
   }
   const OHP = { finalReps, liveReps, labelSet, LIVE_LAG, heightTrace, findPeaks, filtfilt, F, FS };
@@ -806,23 +846,23 @@ const PRESS_HOLD = 1; // Press mode: shown at once (16 Nov; put-downs are filter
 function updatePressLive() {
   if (phase !== 'work' || moveOf(curSet) !== 'press') return;
   if (pressLive.set !== curSet) pressLive = { set: curSet, hist: [], n: 0 };
-  const S = pressSamples(curSet), lr = OHP.liveReps(S); pressLive.hist.push(lr.reps.length); pressLive.rises = lr.reps.map(r => r.rise);   // heights feed the user view's press bars
+  const S = pressSamples(curSet), lr = OHP.liveReps(S); pressLive.cnxs = lr.cnxs; pressLive.hist.push(lr.reps.length); pressLive.rises = lr.reps.map(r => r.rise);   // heights feed the user view's press bars
   if (pressLive.hist.length > PRESS_HOLD) pressLive.hist.shift();
   const n0 = pressLive.n;
   if (pressLive.hist.length === PRESS_HOLD) pressLive.n = Math.max(pressLive.n, Math.min(...pressLive.hist));
   if (!pressLive.reps) pressLive.reps = [];
-  for (let i = n0; i < pressLive.n && i < lr.reps.length; i++) pressLive.reps.push({ t: S.epoch[lr.reps[i].k], rise: lr.reps[i].rise });   // what the live count showed, for the final merge
+  for (let i = n0; i < pressLive.n && i < lr.reps.length; i++) pressLive.reps.push({ t: S.epoch[lr.reps[i].k], rise: lr.reps[i].rise, h90: lr.reps[i].h90, tUp: lr.reps[i].tUp, cnx: lr.reps[i].cnx });   // what the live count showed, for the final merge
 }
 function finalizePress(set) {
   if (!set || moveOf(set) !== 'press') return;
   const s = pressSamples(set); if (!s.t.length) return;
-  const reps = OHP.finalReps(s).map(r => ({ t: s.epoch[r.k], rise: r.rise, short: r.short }));
+  const reps = OHP.finalReps(s).map(r => ({ t: s.epoch[r.k], rise: r.rise, short: r.short, h90: r.h90, tUp: r.tUp, hand: handOf(r.cnx) }));
   // final count = the larger of the whole-set count and the live count (neither has run above the truth on any labelled set; the live
   // count catches a press the whole-set trace can lose next to a put-down, 16 Nov 11:02 set 2). Live press times drift up to about 1 s
   // from the whole-set ones, so an extra press takes the live press furthest from every final press.
   if (pressLive.set === set && pressLive.reps && pressLive.n > reps.length) {
     const pool = pressLive.reps.map(l => ({ l, d: Math.min(...reps.map(r => Math.abs(r.t - l.t)), Infinity) })).sort((a, b) => b.d - a.d);
-    pool.slice(0, pressLive.n - reps.length).forEach(({ l }) => reps.push({ t: l.t, rise: l.rise, short: false, fromLive: true }));
+    pool.slice(0, pressLive.n - reps.length).forEach(({ l }) => reps.push({ t: l.t, rise: l.rise, short: false, fromLive: true, hand: handOf(l.cnx) }));   // power not taken from a live-only press
     reps.sort((a, b) => a.t - b.t);
   }
   setMeta[set].press = { reps };
@@ -834,7 +874,7 @@ function updateAutoLive() {
   if (phase !== 'work' || !autoLike(moveOf(curSet))) return;
   if (autoLive.set !== curSet) autoLive = { set: curSet, hist: [], n: { swings: 0, cleans: 0, presses: 0 } };
   const s = pressSamples(curSet), L = OHP.labelSet(s, s.t.length ? s.t[s.t.length - 1] - OHP.LIVE_LAG : 0);
-  autoLive.hist.push({ swings: L.swings.length, cleans: L.cleans.length, presses: L.presses.length });
+  autoLive.hist.push({ swings: L.swings.length, cleans: L.cleans.length, presses: L.presses.length }); autoLive.cnxs = L.cleans.map(c => c.nx);
   if (autoLive.hist.length > LIVE_HOLD) autoLive.hist.shift();
   if (autoLive.hist.length === LIVE_HOLD) AUTO_KEYS.forEach(k => { autoLive.n[k] = Math.max(autoLive.n[k], Math.min(...autoLive.hist.map(h => h[k]))); });
 }
@@ -842,8 +882,8 @@ function finalizeAuto(set) {
   if (!set || !autoLike(moveOf(set))) return;
   const s = pressSamples(set); if (!s.t.length) return;
   const L = OHP.labelSet(s), ep = r => s.epoch[r.k];
-  setMeta[set].auto = { swings: L.swings.map(r => ({ t: ep(r), depth: r.depth, short: r.short })), cleans: L.cleans.map(r => ({ t: ep(r) })),
-                        presses: L.presses.map(r => ({ t: ep(r), rise: r.rise, short: r.short })) };
+  setMeta[set].auto = { swings: L.swings.map(r => ({ t: ep(r), depth: r.depth, short: r.short })), cleans: L.cleans.map(r => ({ t: ep(r), hand: handOf(r.nx), tflip: r.tflip })),
+                        presses: L.presses.map(r => ({ t: ep(r), rise: r.rise, short: r.short, hand: handOf(r.cnx) })) };   // Auto presses: hand only (no power, see LIMB-MODEL)
 }
 // ---- Cleans mode: real-time clean count (15 Nov) ----
 // A clean is counted 0.6 s after its gyro burst, as the bell lands in the rack, without the height trace:
@@ -855,10 +895,10 @@ function finalizeAuto(set) {
 //   changed (16:27 set 4, switch mid-set) and the direction follows it. A 'hanging before' check was dropped (15 Nov 16:05): left-hand cleans straight out of a drop start tilted (0.73-0.81).
 // Cleans less than 1 s after a counted clean are ignored. The exact offline count replaces the live one at Rest or Stop.
 const CF = { PK: 350, NX: 80, ROT: 210, AFTER: 0.885, SEP: 1.0, SWITCH: 0.90 };
-let cleanFast = { set: 0, base: 0, i: 0, n: 0, lastK: -1e9, times: [], dir: 0 };
+let cleanFast = { set: 0, base: 0, i: 0, n: 0, lastK: -1e9, times: [], dir: 0, hands: [] };
 function updateCleanFast() {
   if (phase !== 'work' || moveOf(curSet) !== 'clean') return false;
-  if (cleanFast.set !== curSet) { let b = raw.length; while (b > 0 && raw[b - 1].set === curSet && raw[b - 1].phase === 'work') b--; cleanFast = { set: curSet, base: b, i: b + 50, n: 0, lastK: -1e9, times: [], dir: 0 }; }
+  if (cleanFast.set !== curSet) { let b = raw.length; while (b > 0 && raw[b - 1].set === curSet && raw[b - 1].phase === 'work') b--; cleanFast = { set: curSet, base: b, i: b + 50, n: 0, lastK: -1e9, times: [], dir: 0, hands: [] }; }
   const N = raw.length, g = k => Math.hypot(raw[k].gx, raw[k].gy, raw[k].gz), n0 = cleanFast.n;
   const tilt = (i, j) => { let v = 0; for (let k = i; k < j; k++) { const q = raw[k]; v += Math.abs(q.ax) / (Math.hypot(q.ax, q.ay, q.az) || 1); } return v / (j - i); };
   for (let k = Math.max(cleanFast.i, cleanFast.base + 50); k <= N - 31; k++) {
@@ -873,7 +913,7 @@ function updateCleanFast() {
       cleanFast.dir = Math.sign(nx);
     }
     if (!cleanFast.dir) cleanFast.dir = Math.sign(nx);
-    cleanFast.n++; cleanFast.lastK = k; cleanFast.times.push(raw[k].t);
+    cleanFast.n++; cleanFast.lastK = k; cleanFast.times.push(raw[k].t); (cleanFast.hands = cleanFast.hands || []).push(handOf(nx));   // nx: net twist, sign = hand
   }
   cleanFast.i = Math.max(cleanFast.i, N - 30);
   return cleanFast.n !== n0;
@@ -887,13 +927,90 @@ const nanoSwings = s => reps.filter(r => r.set === s && r.phase === 'work').leng
 const pressCount = s => { const m = setMeta[s]; if (m && m.press) return m.press.reps.length; return s === pressLive.set ? pressLive.n : null; };
 const pressShort = s => { const m = setMeta[s]; return m && m.press ? m.press.reps.filter(r => r.short).length : 0; };
 
+/* LIMB-MODEL START */
+// ---------- Left / right and power for cleans and presses (17 Nov) ----------
+// HAND: the sign of the net twist about the bell's vertical axis in a clean's flip. + is the right hand and - the left on all 73 labelled
+// cleans (15 Nov, Nano on the back face, USB along the bell's vertical axis). A press takes the hand of the clean that racked the bell. Swings
+// have no such signature: for them the hand is the one chosen on the set screen. The Advanced switch swaps the two if the Nano is mounted the other way up.
+// POWER is relative watts, for comparing sides and sessions on the same mounting, not absolute:
+//   swing  E = 1/2 m v_launch^2 + m g h, P = E / rep period                         (as before)
+//   clean  E = m g H, P = E / flip time. H = a fixed lift height from hang to rack (setting, default 0.50 m); flip time = width of the twist's
+//          gyro burst at half its peak (about 0.4-0.8 s). The clean's wrist flip is mostly weightless, so the height cannot be integrated from the
+//          accelerometer (tried: 150-230 cm), hence a fixed H: P then measures how fast the pull and flip were.
+//   press  E = m g h90, P = E / t_up. h90 = height gained from leaving the rack (10% of the rise) to lockout, from the same height trace as the
+//          press count; t_up = time for that stretch. Mean concentric power: 45-130 W for 12 kg strict presses, 230-270 W for a 20 kg push press,
+//          8% median spread within a set (31 labelled press sets). The first and last rep of a set and short presses are left out (the last one
+//          reads high because of the put-down). Not computed in Auto: the height trace drifts in mixed sets.
+const CLEAN_LIFT_DEFAULT = 0.50, LIMB_MIN_REPS = 6;
+let handFlip = false; try { handFlip = localStorage.getItem('kb_handflip') === '1'; } catch (e) {}
+const handOf = nx => nx == null || !isFinite(nx) || nx === 0 ? null : ((nx > 0) !== handFlip ? 'R' : 'L');
+function cleanLift() { const el = document.getElementById('cleanH'), v = el ? parseFloat(el.value) : NaN; return v >= 0.2 && v <= 1.0 ? v : CLEAN_LIFT_DEFAULT; }
+function cleanMetrics(r, kg) {
+  if (!(kg > 0) || !(r.tflip >= 0.25 && r.tflip <= 1.5)) return null;
+  const E = kg * G * cleanLift(); return { E, P: E / r.tflip, T: r.tflip };
+}
+function pressMetrics(r, kg) {
+  if (!(kg > 0) || r.fromLive || !(r.tUp >= 0.25 && r.tUp <= 3) || !(r.h90 > 0.05 && r.h90 <= 1.5)) return null;
+  const E = kg * G * r.h90; return { E, P: E / r.tUp, T: r.tUp };
+}
+// every rep of the given sets with a usable power, and its hand (null if unknown). ref = the rep's own record
+function limbReps(sets) {
+  const out = [];
+  sets.forEach(s => {
+    const m = setMeta[s] || {}, mv = moveOf(s), kg = kgForSet(s) || 0, manual = m.hand === 'L' || m.hand === 'R' ? m.hand : null, free = m.hand === 'Both';
+    if (mv === 'swing') {
+      reps.filter(r => r.counted && r.set === s).forEach(r => { const x = calcMetrics(r, kg); if (x && x.P != null && x.E != null) out.push({ s, mv: 'swing', kg, hand: manual, E: x.E, P: x.P, T: r.interval / 1000, ref: r }); });
+      return;
+    }
+    (m.auto ? m.auto.cleans : []).forEach(r => { const x = cleanMetrics(r, kg); if (x) out.push({ s, mv: 'clean', kg, hand: free ? null : manual || r.hand || null, E: x.E, P: x.P, T: x.T, ref: r }); });
+    if (m.press && mv === 'press') m.press.reps.forEach((r, i, a) => {
+      if (i === 0 || i === a.length - 1 || r.short) return;
+      const x = pressMetrics(r, kg); if (x) out.push({ s, mv: 'press', kg, hand: free ? null : manual || r.hand || null, E: x.E, P: x.P, T: x.T, ref: r });
+    });
+  });
+  return out;
+}
+// left / right per movement and bell: mean power each side, and whether the gap is bigger than the noise (2 standard errors of the difference, and at least 5%).
+// Reps in a set are not independent (pace, fatigue), so this is a guide for a session, not a test: repeat across sessions before trusting a small gap.
+function balance(list, minN = LIMB_MIN_REPS) {
+  const g = {};
+  list.forEach(x => { if (x.hand !== 'R' && x.hand !== 'L') return; const o = g[x.mv + '|' + x.kg] = g[x.mv + '|' + x.kg] || { mv: x.mv, kg: x.kg, R: [], L: [] }; o[x.hand].push(x); });
+  const st = a => { const n = a.length, v = a.map(x => x.P), m = n ? v.reduce((p, q) => p + q, 0) / n : NaN, sd = n > 1 ? Math.sqrt(v.reduce((p, q) => p + (q - m) * (q - m), 0) / (n - 1)) : NaN;
+    return { n, P: m, sd, E: n ? a.reduce((p, x) => p + x.E, 0) : 0 }; };
+  const order = { swing: 0, clean: 1, press: 2 };
+  return Object.values(g).filter(o => o.R.length && o.L.length).map(o => {
+    const R = st(o.R), L = st(o.L), ok = R.n >= minN && L.n >= minN, hi = Math.max(R.P, L.P), lo = Math.min(R.P, L.P);
+    const se = Math.sqrt(R.sd * R.sd / R.n + L.sd * L.sd / L.n), clear = ok && isFinite(se) && (hi - lo) > 2 * se && (hi - lo) / hi >= 0.05;   // beyond the noise and at least 5%
+    return { mv: o.mv, kg: o.kg, R, L, ok, pct: (hi - lo) / hi * 100, lower: R.P < L.P ? 'R' : 'L', clear };
+  }).sort((a, b) => order[a.mv] - order[b.mv] || a.kg - b.kg);
+}
+const balText = b => !b.ok ? 'NEEDS ' + LIMB_MIN_REPS + '+ REPS EACH SIDE' : b.clear ? b.lower + ' ' + Math.round(b.pct) + '% LOWER' : 'EVEN, WITHIN NOISE';
+// hands seen in a set: live from the running detectors, final from the stored reps
+function detectedHands(s) {
+  const m = setMeta[s] || {}, mv = moveOf(s);
+  if (mv === 'swing') return [];
+  if (m.auto || m.press) { const a = [].concat(m.auto ? m.auto.cleans : [], m.auto && mv === 'auto' ? m.auto.presses : [], m.press ? m.press.reps : []); return a.map(r => r.hand).filter(Boolean); }
+  if (mv === 'clean') return ((s === cleanFast.set ? cleanFast.hands : m.cleanLive && m.cleanLive.hands) || []).filter(Boolean);
+  if (mv === 'press') return s === pressLive.set && pressLive.cnxs ? pressLive.cnxs.map(handOf).filter(Boolean) : [];
+  return s === autoLive.set && autoLive.cnxs ? autoLive.cnxs.map(handOf).filter(Boolean) : [];
+}
+// what to show for a set's hand: the user's choice, else what the detector saw (R, L, R+L if it changed), else a prompt
+function handLabel(s) {
+  const m = setMeta[s] || {}, h = m.hand;
+  if (h === 'L' || h === 'R' || h === 'Both') return h;
+  if (moveOf(s) === 'swing') return h === 'A' ? '?' : (h || 'R');
+  const d = detectedHands(s), r = d.filter(x => x === 'R').length, l = d.length - r;
+  return !d.length ? 'AUTO' : r && l ? 'R+L' : r ? 'R' : 'L';
+}
+/* LIMB-MODEL END */
+
 // ---------- Phases ----------
 function setPhase(p) {
   const now = Date.now();
   const open = phases[phases.length - 1];
   if (open && open.t1 == null) open.t1 = now;
   if (phase === 'work' && p !== 'work') { finalizePress(curSet); finalizeAuto(curSet); }   // exact counts once the set ends
-  if (phase === 'work' && p !== 'work' && moveOf(curSet) === 'clean' && cleanFast.set === curSet) setMeta[curSet].cleanLive = { n: cleanFast.n, times: cleanFast.times.slice() };   // fallback for the user view if the set has no raw data
+  if (phase === 'work' && p !== 'work' && moveOf(curSet) === 'clean' && cleanFast.set === curSet) setMeta[curSet].cleanLive = { n: cleanFast.n, times: cleanFast.times.slice(), hands: (cleanFast.hands || []).slice() };   // fallback for the user view if the set has no raw data
   if (p === 'work') { curSet++; cleanFast.set = 0; setMeta[curSet] = { movement: $('move').value, kg: kgValue() || null, trueReps: null }; if (moveOf(curSet) === 'swing') { SWINGVIZ.reset(true); TONE.ensure(); } if (moveOf(curSet) === 'clean') { CLEANVIZ.reset(); vizCleanSeen = { set: curSet, n: 0, t: -1e9, caught: false }; TONE.ensure(); } }
   phase = p; phaseStart = now;
   if (p !== 'idle') phases.push({ phase: p, set: curSet, t0: now, t1: null });
@@ -1283,8 +1400,13 @@ function download(name, text) {
 const stamp = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
 const f = (v, d) => (v == null || !isFinite(v)) ? '' : v.toFixed(d);
 
+function limbCols(kind, r, kg, used) {   // energy, power and the time it was taken over for a clean or press rep, from LIMB-MODEL
+  const x = kind === 'clean' ? cleanMetrics(r, kg) : kind === 'press' ? pressMetrics(r, kg) : null;
+  return { energy_j: f(x && x.E, 1), power_w: f(x && x.P, 1), power_time_s: f(x && x.T, 2), in_balance: x ? (used.has(r) ? 1 : 0) : '' };
+}
 $('btnCsv').onclick = () => {
   const r0 = radiusSetting();
+  const used = new Set(limbReps(Object.keys(setMeta).map(Number)).filter(x => x.hand).map(x => x.ref));   // reps that count in the left / right comparison
   const rows = reps.map(r => {
     const kg = kgForSet(r.set);
     const m = moveOf(r.set) === 'swing' ? calcMetrics(r, kg, r0) : null;
@@ -1294,7 +1416,7 @@ $('btnCsv').onclick = () => {
       peak_g: r.peak.toFixed(3), interval_ms: r.interval,
       gyro_peak_dps: r.gyroPk, sweep_deg: r.sweep, gyro_launch_dps: r.gyroLaunch,
       bell_kg: kg || '', radius_measured_m: f(m && m.own, 2), radius_used_m: f(m && m.rad, 2), speed_ms: f(m && m.vPk, 2),
-      energy_j: f(m && m.E, 1), power_w: f(m && m.P, 1),
+      energy_j: f(m && m.E, 1), power_w: f(m && m.P, 1), in_balance: m && m.P != null && used.has(r) ? 1 : '',
       movement: r.set ? moveOf(r.set) : '', set_mode: r.set ? moveOf(r.set) : '', your_count: (setMeta[r.set] && setMeta[r.set].trueReps != null) ? setMeta[r.set].trueReps : '', set_description: setDesc(r.set), ...capCols()
     };
   });
@@ -1303,16 +1425,18 @@ $('btnCsv').onclick = () => {
     const ar = [];
     if (m.auto) AUTO_KEYS.filter(key => moveOf(s) !== 'clean' || key === 'cleans').forEach(key => m.auto[key].forEach((r, i) => ar.push({ time: new Date(r.t).toISOString(), phase: 'work', set: s, rep_in_set: i + 1, counted: 1, bell_kg: kgForSet(s) || '',
       movement: key.slice(0, -1).replace('presse', 'press'), set_mode: moveOf(s), press_height_cm: r.rise != null ? (r.rise * 100).toFixed(0) : '', float_depth_g: r.depth != null ? r.depth.toFixed(2) : '', short_rep: r.short == null ? '' : (r.short ? 1 : 0),
+      ...limbCols(key === 'cleans' ? 'clean' : '', r, kgForSet(s), used), hand_detected: key === 'swings' ? '' : (r.hand || ''),
       your_count: m.trueReps != null ? m.trueReps : '', set_description: setDesc(s), ...capCols() })));
     ar.sort((x, y) => x.time < y.time ? -1 : 1).forEach(r => rows.push(r));   // in the order they happened
     if (!m.press) return;
     m.press.reps.forEach((r, i) => rows.push({ time: new Date(r.t).toISOString(), phase: 'work', set: s, rep_in_set: i + 1, counted: 1, bell_kg: kgForSet(s) || '',
       movement: 'press', set_mode: 'press', press_height_cm: (r.rise * 100).toFixed(0), short_rep: r.short ? 1 : 0,
+      ...limbCols('press', r, kgForSet(s), used), hand_detected: r.hand || '',
       your_count: m.trueReps != null ? m.trueReps : '', set_description: setDesc(s), ...capCols() }));
   });
-  rows.forEach(r => { const m = setMeta[r.set] || {}; r.hand = m.hand || ''; r.workout_id = m.workout || ''; r.style = m.style || ''; r.look_pref = m.lookPref || ''; r.look_comment = m.lookComment || ''; });   // set by the user view
+  rows.forEach(r => { const m = setMeta[r.set] || {}; r.hand = m.hand === 'L' || m.hand === 'R' || m.hand === 'Both' ? m.hand : (r.hand_detected || ''); r.workout_id = m.workout || ''; r.style = m.style || ''; r.look_pref = m.lookPref || ''; r.look_comment = m.lookComment || ''; });   // set by the user view
   download(fname('reps'), csv(rows, ['time', 'phase', 'set', 'rep_in_set', 'counted', 'full_swing', 'device_set', 'device_total', 'peak_g', 'interval_ms',
-    'gyro_peak_dps', 'sweep_deg', 'gyro_launch_dps', 'bell_kg', 'radius_measured_m', 'radius_used_m', 'speed_ms', 'energy_j', 'power_w', 'movement', 'set_mode', 'press_height_cm', 'float_depth_g', 'short_rep', 'your_count', 'hand', 'workout_id', 'style', 'look_pref', 'look_comment', 'set_description', 'session_name', 'description']));
+    'gyro_peak_dps', 'sweep_deg', 'gyro_launch_dps', 'bell_kg', 'radius_measured_m', 'radius_used_m', 'speed_ms', 'energy_j', 'power_w', 'power_time_s', 'hand_detected', 'in_balance', 'movement', 'set_mode', 'press_height_cm', 'float_depth_g', 'short_rep', 'your_count', 'hand', 'workout_id', 'style', 'look_pref', 'look_comment', 'set_description', 'session_name', 'description']));
 };
 $('btnRawCsv').onclick = () => {
   if (!raw.length) { setStatus('No raw data yet - press Start set while connected'); return; }
@@ -1401,14 +1525,18 @@ function render() {
     const dur = type => phases.filter(p => p.phase === type && p.set === s).reduce((x, p) => x + ((p.t1 ?? now) - p.t0), 0);
     const sh = a.filter(isShort).length;
     const mine = `<td><input class="mine" type="number" inputmode="numeric" min="0" max="999" data-set="${s}" value="${setMeta[s] && setMeta[s].trueReps != null ? setMeta[s].trueReps : ''}" aria-label="Reps you actually did in set ${s}"></td><td><input class="note" type="text" maxlength="120" placeholder="e.g. last 3 half reps" data-set="${s}" value="${(setMeta[s] && setMeta[s].desc || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}" aria-label="Notes for set ${s}"></td>`;
+    const hl = ' · ' + handLabel(s).toLowerCase().replace('auto', 'hand ?'), lp = limbReps([s]).filter(x => x.mv !== 'swing');
+    const lpw = lp.length ? fmt(mean(lp.map(x => x.P)), 0) : '–', lwk = lp.length ? fmt(lp.reduce((q, x) => q + x.E, 0) / 1000, 2) : '–';
     if (moveOf(s) === 'clean') { const c = autoCounts(s);
-      return `<tr><td>${s}</td><td>${MOVE_LABEL.clean} ${kgForSet(s) || ''}${kgForSet(s) ? ' kg' : ''}</td><td>${c ? c.cleans : '–'}</td><td>–</td><td>–</td><td>–</td><td>–</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td>${mine}</tr>`; }
+      return `<tr><td>${s}</td><td>${MOVE_LABEL.clean} ${kgForSet(s) || ''}${kgForSet(s) ? ' kg' : ''}${hl}</td><td>${c ? c.cleans : '–'}</td><td>–</td><td>–</td><td>${lpw}</td><td>${lwk}</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td>${mine}</tr>`; }
     if (moveOf(s) === 'auto') { const c = autoCounts(s), sh2 = autoShort(s);
-      return `<tr><td>${s}</td><td>${MOVE_LABEL.auto} ${kgForSet(s) || ''}${kgForSet(s) ? ' kg' : ''}</td><td style="white-space:nowrap">${c ? `${c.swings} sw · ${c.cleans} cl · ${c.presses} pr` : '–'}${sh2 ? ` <span style="color:#ffb020">(${sh2} short)</span>` : ''}</td><td>–</td><td>–</td><td>–</td><td>–</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td>${mine}</tr>`; }
+      return `<tr><td>${s}</td><td>${MOVE_LABEL.auto} ${kgForSet(s) || ''}${kgForSet(s) ? ' kg' : ''}${hl}</td><td style="white-space:nowrap">${c ? `${c.swings} sw · ${c.cleans} cl · ${c.presses} pr` : '–'}${sh2 ? ` <span style="color:#ffb020">(${sh2} short)</span>` : ''}</td><td>–</td><td>–</td><td>–</td><td>–</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td>${mine}</tr>`; }
     if (isPressSet(s)) { const pcs = pressCount(s), pss = pressShort(s);
-      return `<tr><td>${s}</td><td>${MOVE_LABEL.press} ${kgForSet(s) || ''}${kgForSet(s) ? ' kg' : ''}</td><td>${pcs == null ? '–' : pcs}${pss ? ` <span style="color:#ffb020">(${pss} short)</span>` : ''}</td><td>–</td><td>–</td><td>–</td><td>–</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td>${mine}</tr>`; }
+      return `<tr><td>${s}</td><td>${MOVE_LABEL.press} ${kgForSet(s) || ''}${kgForSet(s) ? ' kg' : ''}${hl}</td><td>${pcs == null ? '–' : pcs}${pss ? ` <span style="color:#ffb020">(${pss} short)</span>` : ''}</td><td>–</td><td>–</td><td>${lpw}</td><td>${lwk}</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td>${mine}</tr>`; }
     return `<tr><td>${s}</td><td>${MOVE_LABEL[moveOf(s)]} ${kgForSet(s) || ''}${kgForSet(s) ? ' kg' : ''}</td><td>${a.length}${sh ? ` <span style="color:#ffb020">(${sh} short)</span>` : ''}</td><td>${fmt(mean(a.filter(r => r.interval).map(r => r.interval / 1000)))}</td><td>${fmt(mean(a.map(r => r.peak)))}</td><td>${fmt(pw, 0)}</td><td>${fmt(work, 2)}</td><td>${mmss(dur('work'))} / ${mmss(dur('rest'))}</td>${mine}</tr>`;
   }).join('');
+  { const bal = balance(limbReps(setNums)); $('balDiag').style.display = bal.length ? '' : 'none';
+    $('balDiagTxt').innerHTML = bal.map(b => `${MOVE_LABEL[b.mv]} ${b.kg} kg: R ${fmt(b.R.P, 0)} W (${b.R.n}) · L ${fmt(b.L.P, 0)} W (${b.L.n}) → ${balText(b)}`).join('<br>'); }
   if (window.__uv) window.__uv.paint();
 }
 
@@ -1469,7 +1597,7 @@ $('btnSim').onclick = () => {
       else if (q < 0.65) { tw = 275 + j(3); tl = 0.9 + j(0.02); } else if (q < 0.78) { tw = 275 * (1 - e((q - 0.65) / 0.13)); tl = 0.9 * (1 - e((q - 0.65) / 0.13)); }
       CLEANVIZ.set(tw, tl, Date.now());
       if (simClean.q < 0.45 && q >= 0.45) {
-        if (cleanFast.set !== curSet) cleanFast = { set: curSet, base: raw.length, i: raw.length, n: 0, lastK: -1e9, times: [], dir: 0 };
+        if (cleanFast.set !== curSet) cleanFast = { set: curSet, base: raw.length, i: raw.length, n: 0, lastK: -1e9, times: [], dir: 0, hands: [] };
         cleanFast.n++; cleanFast.times.push(Date.now()); vizCleanCount(); render();
       }
       simClean.q = q;
@@ -1510,13 +1638,14 @@ const UV = (() => {
   const load = k => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } };
   const shapeIcon = m => m === 'swing' ? '<span class="dot"></span>' : m === 'clean' ? '<span class="sq"></span>' : m === 'press' ? '<span style="color:#2fd08a;-webkit-text-stroke:1px #141414">▲</span>' : '';
   const glyph = { swing: '● ', clean: '■ ', press: '▲ ' };
-  const handTxt = h => h === 'Both' ? 'BOTH' : (h || 'R');
+  const handTxt = h => h === 'Both' ? 'BOTH' : h === 'A' ? 'AUTO' : (h || 'R');
 
   let view = load('kbu_view') || 'user';
   if (location.hash === '#dev') view = 'diag';
   let scr = 'home', W = load('kbu_workout'), fixSet = 0;
-  let next = load('kbu_next') || { mv: $('move').value, kg: kgValue() || 16, hand: 'R' };
+  let next = load('kbu_next') || { mv: $('move').value, kg: kgValue() || 16, hand: 'A' };
   if (!MVN[next.mv]) next.mv = 'swing';
+  if (next.hv !== 2) { next.hv = 2; next.hand = 'A'; store('kbu_next', next); }   // 17 Nov: Auto hand is the new default (it reads cleans and presses)
   let seen = { set: 0, swing: 0, clean: 0, press: 0, seq: [] };   // live counts already announced (tone, flow strip)
 
   const live = () => connected() || !!simTimer;
@@ -1559,6 +1688,10 @@ const UV = (() => {
       const c = autoCounts(s);
       if (c) { o.swing = c.swings; o.clean = c.cleans; o.press = c.presses; o.final = c.final; } else o.final = !(phase === 'work' && s === curSet);
       if (m.auto) { o.shSw = autoShort(s); [['swing', 'swings'], ['clean', 'cleans'], ['press', 'presses']].forEach(([k, key]) => { o.t[k] = m.auto[key].map(r => r.t); }); }
+    }
+    if (mv !== 'swing') {   // clean and press power exist once the set has ended (LIMB-MODEL); Auto gets clean power only
+      const lp = limbReps([s]), by = k => { const a = lp.filter(x => x.mv === k).map(x => x.P); return a.length ? a.reduce((p, q) => p + q, 0) / a.length : NaN; };
+      o.wk = { clean: by('clean'), press: by('press') }; if (mv === 'clean' || mv === 'press') o.watts = o.wk[mv];
     }
     o.total = o.swing + o.clean + o.press;
     if (mv !== 'auto' && m.trueReps != null && o.final) { o.fixed = true; o[mv] = m.trueReps; o.total = m.trueReps; }
@@ -1618,11 +1751,11 @@ const UV = (() => {
     document.querySelectorAll('#uKg button[data-kg]').forEach(b => { b.classList.toggle('sel', +b.dataset.kg === next.kg); b.setAttribute('aria-pressed', +b.dataset.kg === next.kg); });
     $('uKgOther').classList.toggle('sel', !KGS.includes(next.kg)); $('uKgOther').textContent = KGS.includes(next.kg) ? 'Other' : next.kg;
     document.querySelectorAll('#uHand button').forEach(b => { b.classList.toggle('sel', b.dataset.h === next.hand); b.setAttribute('aria-pressed', b.dataset.h === next.hand); });
-    $('uTip').textContent = TIPS[next.mv];
+    $('uTip').textContent = TIPS[next.mv] + (next.hand === 'A' ? (next.mv === 'swing' ? ' Hand: Auto cannot read swings, so tap Left or Right if you want the sides compared.' : ' Hand: read from the bell (Auto).') : '');
     $('uSetupTitle').textContent = 'SET ' + pad(setsDone() + 1);
     $('uSetupSum').textContent = nextLabel();
   }
-  const nextLabel = () => (MVN[next.mv] + ' · ' + next.kg + ' kg · ' + handTxt(next.hand)).toUpperCase();
+  const nextLabel = () => (MVN[next.mv] + ' · ' + next.kg + ' kg · ' + (next.hand === 'A' && next.mv === 'swing' ? 'HAND ?' : handTxt(next.hand))).toUpperCase();
   document.querySelectorAll('#uMv button').forEach(b => b.onclick = () => { next.mv = b.dataset.mv; store('kbu_next', next); paintSetup(); });
   document.querySelectorAll('#uKg button[data-kg]').forEach(b => b.onclick = () => { next.kg = +b.dataset.kg; store('kbu_next', next); paintSetup(); });
   $('uKgOther').onclick = () => { const v = parseFloat(window.prompt ? prompt('Bell weight in kg', next.kg) : ''); if (v > 0 && v <= 100) { next.kg = v; store('kbu_next', next); paintSetup(); } };
@@ -1647,7 +1780,7 @@ const UV = (() => {
   // ---------- in a set ----------
   function paintSet() {
     const s = curSet, mv = moveOf(s), c = counts(s), auto = mv === 'auto';
-    $('uSetLabel').innerHTML = shapeIcon(mv) + ('SET ' + pad(setsDone()) + ' · ' + MVN[mv] + ' · ' + (kgForSet(s) || '?') + ' KG · ' + handTxt(setMeta[s] && setMeta[s].hand)).toUpperCase();
+    $('uSetLabel').innerHTML = shapeIcon(mv) + ('SET ' + pad(setsDone()) + ' · ' + MVN[mv] + ' · ' + (kgForSet(s) || '?') + ' KG · ' + handLabel(s)).toUpperCase();
     $('uSingle').style.display = auto ? 'none' : 'flex'; $('uAuto').style.display = auto ? 'flex' : 'none';
     $('uPressCard').style.display = mv === 'press' ? '' : 'none'; $('uFlowCard').style.display = auto ? '' : 'none';
     if (auto) {
@@ -1660,7 +1793,7 @@ const UV = (() => {
       const sh = mv === 'swing' ? c.shSw : 0;
       $('uShort').style.display = sh ? '' : 'none'; $('uShort').textContent = sh + ' SHORT';
       $('uSetHud').style.gridTemplateColumns = 'repeat(3,minmax(0,1fr))';
-      $('uSetHud').innerHTML = `<div><i>RPM</i><b>${r0(rpmOf(c.t[mv]))}</b></div><div><i>WATTS</i><b style="color:${mv === 'swing' ? '' : '#6b6860'}">${mv === 'swing' ? r0(c.watts) : '--'}</b></div><div><i>KG MOVED</i><b>${c.kg}</b></div>`;
+      $('uSetHud').innerHTML = `<div><i>RPM</i><b>${r0(rpmOf(c.t[mv]))}</b></div><div><i>WATTS</i><b style="color:${isFinite(c.watts) ? '' : '#6b6860'}">${r0(c.watts)}</b></div><div><i>KG MOVED</i><b>${c.kg}</b></div>`;
       if (mv === 'press') drawBars(c.bars);
     }
   }
@@ -1697,14 +1830,14 @@ const UV = (() => {
     if (!s || !setMeta[s]) { $('uDoneTitle').textContent = 'NO SET YET'; $('uDoneHud').innerHTML = ''; $('uDoneStrip').innerHTML = ''; $('uFixOpen').style.display = 'none'; return; }
     const c = counts(s), mv = c.mv, m = setMeta[s];
     $('uDoneTitle').textContent = 'SET ' + pad(ws.indexOf(s) + 1) + ' DONE';
-    $('uDoneSub').textContent = (MVN[mv] + ' · ' + (kgForSet(s) || '?') + ' kg · ' + handTxt(m.hand)).toUpperCase();
+    $('uDoneSub').textContent = (MVN[mv] + ' · ' + (kgForSet(s) || '?') + ' kg · ' + handLabel(s)).toUpperCase();
     if (mv === 'auto') {
       $('uDoneHud').innerHTML = `<div><i>SWINGS</i><b>${c.swing}</b></div><div><i>CLEANS</i><b>${c.clean}</b></div><div><i>PRESSES</i><b>${c.press}</b></div><div><i>KG</i><b>${c.kg}</b></div>`;
       const ev = []; ['swing', 'clean', 'press'].forEach(k => c.t[k].forEach(t => ev.push({ t, k })));
       ev.sort((a, b) => a.t - b.t);
       $('uDoneStrip').innerHTML = ev.map(e => `<span style="background:${MCOL[e.k]}"></span>`).join('');
     } else {
-      $('uDoneHud').innerHTML = `<div><i>${UNIT[mv]}</i><b>${c[mv]}${c.fixed ? '<span style="font-size:10px">*</span>' : ''}</b></div><div><i>RPM</i><b>${r0(rpmOf(c.t[mv]))}</b></div><div><i>WATTS</i><b>${mv === 'swing' ? r0(c.watts) : '--'}</b></div><div><i>KG</i><b>${c.kg}</b></div>`;
+      $('uDoneHud').innerHTML = `<div><i>${UNIT[mv]}</i><b>${c[mv]}${c.fixed ? '<span style="font-size:10px">*</span>' : ''}</b></div><div><i>RPM</i><b>${r0(rpmOf(c.t[mv]))}</b></div><div><i>WATTS</i><b>${r0(c.watts)}</b></div><div><i>KG</i><b>${c.kg}</b></div>`;
       const tiles = mv === 'swing' ? (c.cols || []).map(col => col ? `<span style="background:${col}"></span>` : '<span class="sh"></span>')
         : mv === 'press' ? c.bars.map((b, i) => b.short ? '<span class="sh"></span>' : `<span style="background:${VIZ_PAL[i % 5]}"></span>`)
         : c.t.clean.map((t, i) => `<span style="background:${VIZ_PAL[i % 5]}"></span>`);
@@ -1744,10 +1877,11 @@ const UV = (() => {
         const b = by[k] = by[k] || { n: 0, kg: 0, rpmW: 0, rpmN: 0, wW: 0, wN: 0 };
         const rpm = rpmOf(c.t[k]), kgk = cnt * (kgForSet(s) || 0);
         b.n += cnt; b.kg += kgk; if (isFinite(rpm)) { b.rpmW += rpm * cnt; b.rpmN += cnt; }
-        if (k === 'swing' && c.mv === 'swing' && isFinite(c.watts)) { b.wW += c.watts * cnt; b.wN += cnt; }
+        const wv = c.mv === 'auto' ? (c.wk ? c.wk[k] : NaN) : c.watts;
+        if (isFinite(wv)) { b.wW += wv * cnt; b.wN += cnt; }
         kg += kgk; n += cnt;
-        rows.push({ set: i + 1, k, auto: c.mv === 'auto', hand: setMeta[s].hand, kg: kgForSet(s) || '?', n: cnt, sh: k === 'swing' ? c.shSw : k === 'press' ? c.shPr : 0,
-                    fixed: c.fixed, rpm, w: k === 'swing' && c.mv === 'swing' ? c.watts : NaN });
+        rows.push({ set: i + 1, k, auto: c.mv === 'auto', hand: handLabel(s), kg: kgForSet(s) || '?', n: cnt, sh: k === 'swing' ? c.shSw : k === 'press' ? c.shPr : 0,
+                    fixed: c.fixed, rpm, w: wv });
       });
     });
     const end = W.end || Date.now(), d = new Date(W.start), when = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase();
@@ -1761,9 +1895,15 @@ const UV = (() => {
       <span class="lab" style="color:${b.wN ? '#141414' : ''};font-weight:${b.wN ? 700 : 400}">${b.wN ? Math.round(b.wW / b.wN) + ' W AVG' : 'POWER --'}</span><span class="lab">${Math.round(b.kg)} KG</span></div>`; }).join('')
       : '<div class="lab">No reps recorded.</div>';
     $('uSumTable').innerHTML = '<thead><tr><th>SET</th><th>MOVE</th><th>KG</th><th>REPS</th><th>RPM</th><th>W</th></tr></thead><tbody>' + rows.map(r =>
-      `<tr><td>${pad(r.set)}</td><td>${glyph[r.k]}${r.k.slice(0, 2).toUpperCase()}${r.auto ? '·A' : ''} ${r.hand === 'Both' ? 'B' : (r.hand || 'R')}</td><td>${r.kg}</td><td>${r.n}${r.sh || r.fixed ? '<span style="color:#6b6860">*</span>' : ''}</td><td>${r0(r.rpm)}</td><td style="color:${isFinite(r.w) ? '#141414' : '#6b6860'}">${r0(r.w)}</td></tr>`).join('') + '</tbody>';
+      `<tr><td>${pad(r.set)}</td><td>${glyph[r.k]}${r.k.slice(0, 2).toUpperCase()}${r.auto ? '·A' : ''} ${r.hand === 'Both' ? 'B' : (r.hand || '?')}</td><td>${r.kg}</td><td>${r.n}${r.sh || r.fixed ? '<span style="color:#6b6860">*</span>' : ''}</td><td>${r0(r.rpm)}</td><td style="color:${isFinite(r.w) ? '#141414' : '#6b6860'}">${r0(r.w)}</td></tr>`).join('') + '</tbody>';
     const nsh = rows.reduce((a, r) => a + r.sh, 0);
     $('uSumFoot').textContent = [nsh ? '* includes ' + nsh + ' short rep' + (nsh > 1 ? 's' : '') : '', rows.some(r => r.fixed) ? '* count corrected by you' : '', rows.some(r => r.auto) ? '·A = counted in Auto (trial)' : ''].filter(Boolean).join(' · ');
+    const bal = balance(limbReps(ws)), bx = $('uSumBal');
+    bx.style.display = bal.length ? 'flex' : 'none';
+    bx.innerHTML = bal.length ? '<div class="lab">LEFT / RIGHT · MEAN POWER PER REP</div>' + bal.map(b => `<div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:11px;font-weight:700;letter-spacing:.06em">${shapeIcon(b.mv)}${MVN[b.mv].toUpperCase()} · ${b.kg} KG</span>
+      <span style="font-size:15px"><b>R ${r0(b.R.P)} W</b> <span class="lab" style="display:inline">${b.R.n} reps</span> &nbsp;·&nbsp; <b>L ${r0(b.L.P)} W</b> <span class="lab" style="display:inline">${b.L.n} reps</span></span>
+      <span class="lab" style="color:${b.clear ? '#141414' : ''};font-weight:${b.clear ? 700 : 400}">${balText(b)}</span></div>`).join('')
+      + '<div class="lab" style="font-size:9px">Relative watts, same bell and movement. Clean power uses a fixed lift height, so it shows how fast the pull was. Swings need a hand picked.</div>' : '';
     lastSum = { when, mins: Math.max(1, Math.round((end - W.start) / 60000)), kg: Math.round(kg), reps: n, sets: ws.length, by: Object.fromEntries(ks.map(k => [k, by[k].n])) };
     if (ws.length && n) store('kbu_last', lastSum);
   }
