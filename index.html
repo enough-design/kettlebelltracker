@@ -1295,6 +1295,7 @@ $('btnCsv').onclick = () => {
       gyro_peak_dps: r.gyroPk, sweep_deg: r.sweep, gyro_launch_dps: r.gyroLaunch,
       bell_kg: kg || '', radius_measured_m: f(m && m.own, 2), radius_used_m: f(m && m.rad, 2), speed_ms: f(m && m.vPk, 2),
       energy_j: f(m && m.E, 1), power_w: f(m && m.P, 1),
+      float_depth_g: (r.counted && r.set && moveOf(r.set) === 'swing' && repDepth(r) != null) ? repDepth(r).toFixed(2) : '', short_rep: (r.counted && r.set && moveOf(r.set) === 'swing') ? (isShort(r) ? 1 : 0) : '',
       movement: r.set ? moveOf(r.set) : '', set_mode: r.set ? moveOf(r.set) : '', your_count: (setMeta[r.set] && setMeta[r.set].trueReps != null) ? setMeta[r.set].trueReps : '', set_description: setDesc(r.set), ...capCols()
     };
   });
